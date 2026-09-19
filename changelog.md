@@ -1,3 +1,14 @@
+0.35.0
+
+  Rewrite README
+  Add deploy guide
+  Fix production notes
+  Sync lockfile version
+
+0.34.0
+
+  Update AGENTS.md
+
 0.33.0
 
   Remove personal email

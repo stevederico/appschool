@@ -24,7 +24,7 @@ npm run test           # Frontend typecheck + script tests (no vitest)
 cd backend && cargo test --locked
 ```
 
-SQLite file is `./databases/AppSchool.db` (`dbType` "sqlite" in `backend/config.json`).
+SQLite file is `backend/databases/AppSchool.db` (`./databases/AppSchool.db` relative to `backend/`; `dbType` "sqlite" in `backend/config.json`). It is tracked in git and copied into the Docker image as the seed DB.
 
 ## Architecture
 
@@ -36,12 +36,21 @@ SQLite file is `./databases/AppSchool.db` (`dbType` "sqlite" in `backend/config.
 ### Backend (zero-crate Rust + SQLite)
 - `backend/src/routes.rs` - API routes
 - `backend/src/db.rs` - Course, Guide, Quiz, Rep, Progress, Enrollment, Bookmark schema
-- `backend/seed/` - Database seeding scripts (reads `backend/new-guides/`)
-- Runtime loads course content from SQLite; empty guide/rep bodies fall back to those directories
+- `backend/seed/seed-new-courses.js` - Seeds courses, guides, quizzes and reps into SQLite (guide bodies come from `backend/new-guides/`)
+- Runtime loads course content from SQLite; an empty guide body falls back to `backend/new-guides/`. Rep bodies live in the DB only (`backend/new-reps/` was removed)
 
 ### Database (SQLite)
 File at `./databases/AppSchool.db`.
 Tables: `Courses`, `Guides`, `Quizzes`, `Reps`, `Enrollments`, `UserProgress`, `Bookmarks`, `Users`
+
+### Content maintenance
+- The seed script only inserts missing rows. It never updates or deletes existing ones, so editing a guide file or removing a course entry does not change the shipped DB. Update or delete the rows directly, then set `guideCount` / `quizCount` / `repCount` on the `Courses` row.
+- Run `VACUUM` after deleting rows. SQLite leaves deleted text in free pages, and the DB is committed and shipped.
+- The iOS Interview Prep course ships 16 guides, 10 quizzes and 0 reps.
+- Keep personal details out of guides, quizzes, reps, fixtures and the DB (names, real emails, employers, interview transcripts, Xcode `Created by` headers). Use `example.com` addresses in test data.
+
+### Public release
+The public repo is a single-commit snapshot exported from the private working repo (`git archive HEAD` into a fresh directory, then `git init`). Run the `oss-release` audit on the export first (secret files, symlinks, secret-shaped strings, raw-byte grep of the DB). Never push the private repo's history to the public one.
 
 ## Key Routes
 
@@ -87,7 +96,7 @@ GET /api/progress/:courseSlug
 ## Environment
 
 ```bash
-# backend/.env — see backend/PRODUCTION.md for all variables
+# backend/.env — see backend/PRODUCTION.md and docs/DEPLOY.md for all variables
 JWT_SECRET=your-secret
 # SQLite: connectionString set in backend/config.json (./databases/AppSchool.db)
 STRIPE_KEY=sk_test_your-key

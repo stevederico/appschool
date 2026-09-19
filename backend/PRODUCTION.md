@@ -1,5 +1,7 @@
 # Production Deployment
 
+Platform-neutral deployment steps (Docker image, database volume, Stripe webhook, scaling) live in [docs/DEPLOY.md](../docs/DEPLOY.md). This file is a quick reference for the backend.
+
 ## Environment Variables
 
 ```bash
@@ -13,19 +15,23 @@ JWT_SECRET=your-secure-secret
 STRIPE_KEY=sk_test_xxx
 STRIPE_ENDPOINT_SECRET=whsec_xxx
 
-# CORS
-CLIENT_URL=https://yourdomain.com
+# CORS and redirects
+CORS_ORIGINS=https://yourdomain.com
+FRONTEND_URL=https://yourdomain.com
 ```
 
 ## Database
 
 AppSchool uses SQLite (libsqlite3, zero-crate Rust) at `./databases/AppSchool.db` with these tables:
-- `Users` - User accounts and subscriptions
+- `Users` and `Auths` - User accounts, credentials, and subscriptions
 - `Courses` - Course metadata
 - `Guides` - Markdown content for guides
 - `Quizzes` - Quiz questions and answers
 - `Reps` - Coding exercises
-- `Progress` - User progress tracking
+- `Enrollments` - Courses a user has joined
+- `UserProgress` - Per-user progress tracking
+- `Bookmarks` - Saved guide sections
+- `WebhookEvents` - Processed Stripe events, for idempotency
 
 ### Indexes
 
@@ -34,26 +40,13 @@ CREATE UNIQUE INDEX idx_courses_slug ON Courses(slug);
 CREATE UNIQUE INDEX idx_guides_course_slug ON Guides(courseId, slug);
 CREATE UNIQUE INDEX idx_quizzes_course_slug ON Quizzes(courseId, slug);
 CREATE UNIQUE INDEX idx_reps_course_slug ON Reps(courseId, slug);
-CREATE UNIQUE INDEX idx_progress_visitor_course ON Progress(visitorId, courseId);
+CREATE UNIQUE INDEX idx_userprogress_user_course ON UserProgress(userId, courseId);
 ```
-
-## Deployment Platforms
-
-### Railway
-1. Connect GitHub repo
-2. Add environment variables
-3. Deploy backend service
-4. Set `PORT` to Railway's automatic port
-
-### Vercel
-1. Deploy frontend from root
-2. Deploy backend as separate project
-3. Update `CLIENT_URL` for CORS
 
 ## Health Check
 
 ```
-GET /health
+GET /api/health
 ```
 
-Returns `{ status: "ok", timestamp: "..." }`
+Returns a JSON status with a database probe.
