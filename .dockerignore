@@ -1,0 +1,49 @@
+# Deno
+deno.lock
+deno.json
+deno.jsonc
+.deno/
+
+# Node
+node_modules/
+npm-debug.log*
+
+# Git
+.git/
+.gitignore
+
+# IDE
+.vscode/
+.idea/
+
+# Environment — never bake secrets (symlinks to shared secret files are the classic leak)
+.env
+.env.*
+**/.env
+**/.env.*
+!**/.env.example
+backend/.env
+backend/.env.*
+!backend/.env.example
+
+# Build artifacts
+dist/
+build/
+backend/coverage/
+backend/target/
+
+# Local data — ship AppSchool.db as the first-boot seed, ignore everything else
+backend/databases/*
+!backend/databases/AppSchool.db
+**/*.db
+!backend/databases/AppSchool.db
+**/*.db-shm
+**/*.db-wal
+uploads/
+**/uploads/
+
+# Misc
+*.md
+!backend/new-guides/**
+*.log
+.DS_Store

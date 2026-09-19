@@ -1,0 +1,251 @@
+import Header from '@stevederico/skateboard-ui/Header';
+import UpgradeSheet from '@stevederico/skateboard-ui/UpgradeSheet';
+import type { UpgradeSheetHandle } from '@stevederico/skateboard-ui/UpgradeSheet';
+import { Check, Trash2 } from 'lucide-react';
+import { useEffect, useState, useRef } from "react";
+import type { DragEvent, KeyboardEvent } from "react";
+import { getRemainingUsage, trackUsage, showUpgradeSheet } from '@stevederico/skateboard-ui/Utilities';
+import { getState } from '@stevederico/skateboard-ui/Context';
+import constants from '../constants.json';
+
+/** A single to-do item in the local list. */
+interface Todo {
+  id: number;
+  text: string;
+  completed: boolean;
+  createdAt: Date | string;
+}
+
+/** Usage quota state returned by getRemainingUsage/trackUsage. */
+interface UsageInfo {
+  remaining: number;
+  total?: number;
+  isSubscriber: boolean;
+}
+
+export default function HomeView() {
+  const { state } = getState();
+  const [usageInfo, setUsageInfo] = useState<UsageInfo>({ remaining: -1, isSubscriber: true });
+  const isUserSubscriber = usageInfo.isSubscriber
+
+  // Get app-specific localStorage key
+  const getTodosKey = () => {
+    const appName = constants.appName || 'skateboard';
+    return `${appName.toLowerCase().replace(/\s+/g, '-')}_todos_v2`;
+  };
+
+  const [todos, setTodos] = useState<Todo[]>(() => {
+    const savedTodos = localStorage.getItem(getTodosKey());
+    return savedTodos ? JSON.parse(savedTodos) : [
+      { id: 1, text: 'Complete the weekly report', completed: false, createdAt: new Date() },
+      { id: 2, text: 'Call the client about the project update', completed: false, createdAt: new Date() },
+      { id: 3, text: 'Review the team proposals', completed: false, createdAt: new Date() }
+    ];
+  });
+  const [newTodo, setNewTodo] = useState('');
+  const [draggedItem, setDraggedItem] = useState<Todo | null>(null);
+  const [dragOverItem, setDragOverItem] = useState<number | null>(null);
+  const upgradeSheetRef = useRef<UpgradeSheetHandle | null>(null);
+
+  // Save todos to localStorage whenever todos change
+  useEffect(() => {
+    localStorage.setItem(getTodosKey(), JSON.stringify(todos));
+  }, [todos]);
+
+  // Subscriber status is now fetched once in main.jsx and stored in context
+
+  // Update usage info when todos change
+  useEffect(() => {
+    const updateUsage = async () => {
+      try {
+        const usage = await getRemainingUsage('todos');
+        setUsageInfo(usage);
+      } catch (error) {
+        console.error('Error updating usage:', error);
+      }
+    };
+
+    updateUsage();
+  }, [todos]);
+
+  const addTodo = async () => {
+    if (newTodo.trim()) {
+      // Check usage limit from current state
+      if (!usageInfo.isSubscriber && usageInfo.remaining <= 0) {
+        showUpgradeSheet(upgradeSheetRef);
+        return;
+      }
+
+      const todo = {
+        id: Date.now(),
+        text: newTodo.trim(),
+        completed: false,
+        createdAt: new Date()
+      };
+      setTodos([todo, ...todos]);
+      setNewTodo('');
+
+      // Track usage and update state with response
+      const updatedUsage = await trackUsage('todos');
+      setUsageInfo(updatedUsage);
+    }
+  };
+
+  const toggleTodo = (id: number) => {
+    const updatedTodos = todos.map(todo =>
+      todo.id === id ? { ...todo, completed: !todo.completed } : todo
+    );
+
+    // Sort todos: incomplete first, completed at bottom
+    const sortedTodos = updatedTodos.sort((a, b) => {
+      if (a.completed === b.completed) return 0;
+      return a.completed ? 1 : -1;
+    });
+
+    setTodos(sortedTodos);
+  };
+
+  const deleteTodo = (id: number) => {
+    setTodos(todos.filter(todo => todo.id !== id));
+  };
+
+  const handleKeyPress = (e: KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') {
+      addTodo();
+    }
+  };
+
+  const handleDragStart = (e: DragEvent<HTMLDivElement>, todo: Todo) => {
+    setDraggedItem(todo);
+    e.dataTransfer.effectAllowed = 'move';
+  };
+
+  const handleDragOver = (e: DragEvent<HTMLDivElement>, todo: Todo) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    setDragOverItem(todo.id);
+  };
+
+  const handleDrop = (e: DragEvent<HTMLDivElement>, targetTodo: Todo) => {
+    e.preventDefault();
+    
+    if (!draggedItem || draggedItem.id === targetTodo.id) {
+      setDragOverItem(null);
+      return;
+    }
+
+    const draggedIndex = todos.findIndex(todo => todo.id === draggedItem.id);
+    const targetIndex = todos.findIndex(todo => todo.id === targetTodo.id);
+    
+    const newTodos = [...todos];
+    const [removed] = newTodos.splice(draggedIndex, 1);
+    newTodos.splice(targetIndex, 0, removed);
+    
+    setTodos(newTodos);
+    setDraggedItem(null);
+    setDragOverItem(null);
+  };
+
+  const handleDragEnd = () => {
+    setDraggedItem(null);
+    setDragOverItem(null);
+  };
+
+  const completedCount = todos.filter(todo => todo.completed).length;
+  const totalCount = todos.length;
+
+  return (
+    <>
+      <Header
+        title="Home"
+        buttonTitle={!isUserSubscriber ? (usageInfo.remaining >= 0 ? `${usageInfo.remaining}` : "Get Unlimited") : undefined}
+        buttonClass={!isUserSubscriber && usageInfo.remaining >= 0 ? "rounded-full w-10 h-10 flex items-center justify-center text-lg" : ""}
+        onButtonTitleClick={!isUserSubscriber ? () => {
+          showUpgradeSheet(upgradeSheetRef);
+        } : undefined}
+      />
+
+      <div className="flex flex-col h-screen bg-background" data-section-id="home-view">
+        {/* Add New Todo */}
+        <div className="p-4 border-b bg-background" data-section-id="todo-input">
+          <input
+            type="text"
+            value={newTodo}
+            onChange={(e) => setNewTodo(e.target.value)}
+            onKeyDown={handleKeyPress}
+            placeholder="Add a new task"
+            className="w-full px-4 py-3 bg-accent border-0 rounded-full focus:outline-none focus:ring-2 focus:ring-app"
+            data-umami-event="todo-input-focused"
+          />
+        </div>
+
+        {/* Todo List */}
+        <div className="flex-1 overflow-y-auto p-6 space-y-6" data-section-id="todo-list">
+          {todos.length === 0 ? (
+            <div className="text-center py-8 opacity-60">
+              <p>No tasks yet. Add one above to get started!</p>
+            </div>
+          ) : (
+            todos.map((todo) => (
+              <div
+                key={todo.id}
+                draggable
+                onDragStart={(e) => handleDragStart(e, todo)}
+                onDragOver={(e) => handleDragOver(e, todo)}
+                onDrop={(e) => handleDrop(e, todo)}
+                onDragEnd={handleDragEnd}
+                className={`group flex items-center gap-3 p-6 bg-accent rounded transition-all hover:bg-accent/80 border-2 ${
+                  todo.completed ? 'opacity-60' : ''
+                } ${
+                  draggedItem?.id === todo.id 
+                    ? 'opacity-50 border-app shadow-lg scale-105' 
+                    : dragOverItem === todo.id
+                    ? 'border-app bg-accent/90'
+                    : 'border-transparent'
+                }`}
+              >
+                {/* Checkbox */}
+                <div
+                  onClick={() => toggleTodo(todo.id)}
+                  className={`w-6 h-6 border-2 border-accent rounded cursor-pointer flex items-center justify-center bg-background`}
+                  data-umami-event="todo-toggled"
+                >
+                  {todo.completed && <Check size={14} className="text-foreground"/>}
+                </div>
+
+                {/* Todo Text */}
+                <span
+                  className={`flex-1 ${
+                    todo.completed
+                      ? 'line-through opacity-60'
+                      : ''
+                  }`}
+                >
+                  {todo.text}
+                </span>
+
+                {/* Delete Button */}
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    deleteTodo(todo.id);
+                  }}
+                  className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-foreground transition-all p-1 cursor-pointer"
+                  title="Delete task"
+                  data-umami-event="todo-deleted"
+                >
+                  <Trash2 size={16}/>
+                </button>
+              </div>
+            ))
+          )}
+        </div>
+      </div>
+      
+      <UpgradeSheet 
+        ref={upgradeSheetRef}
+        userEmail={state.user?.email}
+      />
+    </>
+  )
+}
