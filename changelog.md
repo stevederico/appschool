@@ -1,3 +1,7 @@
+0.36.0
+
+  Drop dottie-analytics
+
 0.35.0
 
   Rewrite README
