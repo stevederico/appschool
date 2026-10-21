@@ -165,9 +165,9 @@ export default function HomeView() {
         } : undefined}
       />
 
-      <div className="flex flex-col h-screen bg-background" data-section-id="home-view">
+      <div className="flex flex-col h-screen bg-background">
         {/* Add New Todo */}
-        <div className="p-4 border-b bg-background" data-section-id="todo-input">
+        <div className="p-4 border-b bg-background">
           <input
             type="text"
             value={newTodo}
@@ -175,12 +175,11 @@ export default function HomeView() {
             onKeyDown={handleKeyPress}
             placeholder="Add a new task"
             className="w-full px-4 py-3 bg-accent border-0 rounded-full focus:outline-none focus:ring-2 focus:ring-app"
-            data-umami-event="todo-input-focused"
           />
         </div>
 
         {/* Todo List */}
-        <div className="flex-1 overflow-y-auto p-6 space-y-6" data-section-id="todo-list">
+        <div className="flex-1 overflow-y-auto p-6 space-y-6">
           {todos.length === 0 ? (
             <div className="text-center py-8 opacity-60">
               <p>No tasks yet. Add one above to get started!</p>
@@ -208,7 +207,6 @@ export default function HomeView() {
                 <div
                   onClick={() => toggleTodo(todo.id)}
                   className={`w-6 h-6 border-2 border-accent rounded cursor-pointer flex items-center justify-center bg-background`}
-                  data-umami-event="todo-toggled"
                 >
                   {todo.completed && <Check size={14} className="text-foreground"/>}
                 </div>
@@ -232,7 +230,6 @@ export default function HomeView() {
                   }}
                   className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-foreground transition-all p-1 cursor-pointer"
                   title="Delete task"
-                  data-umami-event="todo-deleted"
                 >
                   <Trash2 size={16}/>
                 </button>

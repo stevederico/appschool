@@ -279,9 +279,9 @@ export default function GuideView() {
 
   return (
     <>
-      <div className="p-6 max-w-4xl mx-auto" data-section-id="guide-view">
+      <div className="p-6 max-w-4xl mx-auto">
         {/* Guide Meta */}
-        <div className="flex items-center justify-between mb-6" data-section-id="guide-meta">
+        <div className="flex items-center justify-between mb-6">
           <div className="flex items-center gap-4 text-sm text-muted-foreground">
             {guide.wordCount != null && guide.wordCount > 0 && (
               <span className="flex items-center gap-1">
@@ -297,7 +297,6 @@ export default function GuideView() {
             <button
               onClick={() => setViewMode('slide')}
               className="px-4 py-2 bg-accent hover:bg-accent/80 rounded-lg flex items-center gap-2 cursor-pointer transition-all text-sm"
-              data-umami-event="guide-slide-mode-clicked"
             >
               <Play size={16}/>
               Slide Mode
@@ -306,7 +305,7 @@ export default function GuideView() {
         </div>
 
         {/* Guide Content */}
-        <div className="prose prose-invert max-w-none" data-section-id="guide-content">
+        <div className="prose prose-invert max-w-none">
           <MarkdownRenderer
             content={guide.content}
             xaiVoice={xaiVoice}
@@ -317,11 +316,10 @@ export default function GuideView() {
         </div>
 
         {/* Actions */}
-        <div className="mt-12 pt-6 border-t border-accent flex items-center justify-between" data-section-id="guide-actions">
+        <div className="mt-12 pt-6 border-t border-accent flex items-center justify-between">
           <button
             onClick={handleComplete}
             disabled={completing || isCompleted}
-            data-umami-event="guide-mark-complete-clicked"
             className={`px-6 py-3 rounded-lg font-medium flex items-center gap-2 transition-all cursor-pointer ${
               isCompleted
                 ? 'bg-green-500/20 text-green-400'
@@ -346,7 +344,6 @@ export default function GuideView() {
           <button
             onClick={handleTakeQuiz}
             className="px-6 py-3 bg-app text-white rounded-lg font-medium hover:opacity-90 transition-all flex items-center gap-2 cursor-pointer"
-            data-umami-event="guide-take-quiz-clicked"
           >
             <HelpCircle size={20}/>
             Take Quiz

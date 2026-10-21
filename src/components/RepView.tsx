@@ -316,9 +316,9 @@ export default function RepView() {
   return (
     <>
       <Header title={rep.title} backPath={`/app/courses/${slug}`} />
-      <div className="p-6" data-section-id="rep-view">
+      <div className="p-6">
         {/* Timer Bar */}
-        <div className="bg-accent rounded-xl p-4 mb-6 flex items-center justify-between" data-section-id="rep-timer">
+        <div className="bg-accent rounded-xl p-4 mb-6 flex items-center justify-between">
           <div className="flex items-center gap-6">
             <div className="text-center">
               <div className={`text-3xl font-mono font-bold ${timerRunning ? 'text-green-400' : ''}`}>
@@ -352,7 +352,6 @@ export default function RepView() {
             <button
               onClick={resetTimer}
               className="p-2 hover:bg-background rounded-lg transition-all cursor-pointer"
-              data-umami-event="rep-reset-timer-clicked"
             >
               <RotateCcw size={16}/>
             </button>
@@ -361,7 +360,6 @@ export default function RepView() {
                 onClick={startTimer}
                 disabled={isCompleted}
                 className="px-4 py-2 bg-green-500 text-white rounded-lg font-medium hover:bg-green-600 transition-all cursor-pointer flex items-center gap-2 disabled:opacity-50"
-                data-umami-event="rep-start-clicked"
               >
                 <Play size={16}/>
                 Start
@@ -371,7 +369,6 @@ export default function RepView() {
                 <button
                   onClick={stopTimer}
                   className="px-4 py-2 bg-yellow-500 text-white rounded-lg font-medium hover:bg-yellow-600 transition-all cursor-pointer flex items-center gap-2"
-                  data-umami-event="rep-pause-clicked"
                 >
                   <Pause size={16}/>
                   Pause
@@ -379,7 +376,6 @@ export default function RepView() {
                 <button
                   onClick={handleStopAndCompare}
                   className="px-4 py-2 bg-app text-white rounded-lg font-medium hover:opacity-90 transition-all cursor-pointer flex items-center gap-2"
-                  data-umami-event="rep-check-work-clicked"
                 >
                   <Check size={16}/>
                   Check Work
@@ -400,7 +396,6 @@ export default function RepView() {
             <button
               onClick={() => setShowHints(!showHints)}
               className="flex items-center gap-2 text-muted-foreground hover:text-foreground transition-all cursor-pointer"
-              data-umami-event="rep-hints-toggled"
             >
               {showHints ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
               {showHints ? 'Hide Hints' : 'Show Hints'}
@@ -420,7 +415,6 @@ export default function RepView() {
           <button
             onClick={() => setShowSolution(!showSolution)}
             className="flex items-center gap-2 text-muted-foreground hover:text-foreground transition-all cursor-pointer text-sm"
-            data-umami-event="rep-solution-toggled"
           >
             {showSolution ? <EyeOff size={16} /> : <Eye size={16} />}
             {showSolution ? 'Hide Solution' : 'Show Solution'}
@@ -428,7 +422,7 @@ export default function RepView() {
         </div>
 
         {/* Side-by-side Editors */}
-        <div className={`grid gap-4 mb-6 ${showSolution && solution ? 'grid-cols-1 lg:grid-cols-2' : 'grid-cols-1'}`} data-section-id="rep-editors">
+        <div className={`grid gap-4 mb-6 ${showSolution && solution ? 'grid-cols-1 lg:grid-cols-2' : 'grid-cols-1'}`}>
           {/* Code Editor */}
           <div>
             <CodeEditor

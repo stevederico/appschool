@@ -84,7 +84,7 @@ export default function CoursesView() {
   return (
     <>
       <Header title="Courses" />
-      <div className="p-6" data-section-id="courses-view">
+      <div className="p-6">
         {error && (
           <div className="text-red-400 mb-4">{error}</div>
         )}
@@ -93,7 +93,7 @@ export default function CoursesView() {
             No courses available yet.
           </div>
         ) : (
-          <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3" data-section-id="courses-grid">
+          <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
             {[...courses].sort((a, b) => Number(b.isEnrolled === true) - Number(a.isEnrolled === true)).map(course => (
               <CourseCard
                 key={course._id}

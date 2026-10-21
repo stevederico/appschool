@@ -138,9 +138,9 @@ export default function CourseDetailView() {
   };
 
   return (
-    <div className="p-6 max-w-4xl mx-auto" data-section-id="course-detail">
+    <div className="p-6 max-w-4xl mx-auto">
         {/* Course Header */}
-        <div className="bg-accent rounded-xl p-6 mb-6" data-section-id="course-header">
+        <div className="bg-accent rounded-xl p-6 mb-6">
           <div className="flex items-start justify-between mb-4">
             <div>
               <h1 className="text-2xl font-bold">{course.title}</h1>
@@ -155,7 +155,6 @@ export default function CourseDetailView() {
                 <button
                   onClick={handleEnroll}
                   className="bg-app text-white px-6 py-2 rounded-lg font-medium hover:opacity-90 transition-all cursor-pointer"
-                  data-umami-event="course-enroll-now-clicked"
                 >
                   Enroll Now
                 </button>

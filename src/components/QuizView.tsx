@@ -135,8 +135,8 @@ export default function QuizView() {
   // Show results
   if (result) {
     return (
-      <div className="p-6 max-w-2xl mx-auto" data-section-id="quiz-results">
-          <div className={`text-center p-8 rounded-xl mb-6 ${result.passed ? 'bg-green-500/20' : 'bg-red-500/20'}`} data-section-id="quiz-score">
+      <div className="p-6 max-w-2xl mx-auto">
+          <div className={`text-center p-8 rounded-xl mb-6 ${result.passed ? 'bg-green-500/20' : 'bg-red-500/20'}`}>
             {result.passed ? (
               <CheckCircle size={64} className="mx-auto mb-4 text-green-400" />
             ) : (
@@ -196,7 +196,6 @@ export default function QuizView() {
               <button
                 onClick={handleRetry}
                 className="flex-1 py-3 bg-accent rounded-lg font-medium hover:bg-accent/80 transition-all cursor-pointer"
-                data-umami-event="quiz-retry-clicked"
               >
                 Try Again
               </button>
@@ -204,7 +203,6 @@ export default function QuizView() {
             <button
               onClick={() => navigate(`/app/courses/${slug}`)}
               className="flex-1 py-3 bg-app text-white rounded-lg font-medium hover:opacity-90 transition-all cursor-pointer"
-              data-umami-event="quiz-back-to-course-clicked"
             >
               Back to Course
             </button>
@@ -217,9 +215,9 @@ export default function QuizView() {
   const totalQuestions = quiz.questions?.length || 0;
 
   return (
-    <div className="p-6 max-w-2xl mx-auto" data-section-id="quiz-view">
+    <div className="p-6 max-w-2xl mx-auto">
         {/* Questions */}
-        <div className="space-y-8" data-section-id="quiz-questions">
+        <div className="space-y-8">
           {quiz.questions?.map((q, idx) => (
             <div key={q.id} className="bg-accent rounded-xl p-6">
               <h3 className="font-semibold mb-4">
@@ -240,7 +238,6 @@ export default function QuizView() {
                   <button
                     key={optIdx}
                     onClick={() => handleAnswer(q.id, optionValue)}
-                    data-umami-event="quiz-answer-selected"
                     className={`w-full text-left p-4 rounded-lg border-2 transition-all cursor-pointer ${
                       answers[q.id] === optionValue
                         ? 'border-app bg-app/10'
@@ -261,7 +258,6 @@ export default function QuizView() {
         <button
           onClick={handleSubmit}
           disabled={submitting || answeredCount < totalQuestions}
-          data-umami-event="quiz-submit-clicked"
           className={`w-full mt-8 py-4 rounded-lg font-medium transition-all ${
             answeredCount < totalQuestions
               ? 'bg-accent text-muted-foreground cursor-not-allowed'

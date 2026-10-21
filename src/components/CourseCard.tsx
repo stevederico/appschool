@@ -47,8 +47,6 @@ export default function CourseCard({ course, onEnroll }: CourseCardProps) {
     <div
       onClick={handleClick}
       className={`bg-accent rounded-xl p-6 cursor-pointer hover:bg-accent/80 transition-all border ${course.isEnrolled ? 'border-app' : 'border-transparent hover:border-app/30'}`}
-      data-umami-event="course-card-clicked"
-      data-umami-event-course={course.slug}
     >
       <div className="flex items-start justify-between mb-4">
         <h3 className="text-xl font-bold">{course.title}</h3>
@@ -61,8 +59,6 @@ export default function CourseCard({ course, onEnroll }: CourseCardProps) {
           <button
             onClick={handleEnroll}
             className="bg-app text-white px-4 py-1.5 rounded-lg text-sm font-medium hover:opacity-90 transition-all cursor-pointer"
-            data-umami-event="course-enroll-clicked"
-            data-umami-event-course={course.slug}
           >
             Enroll
           </button>

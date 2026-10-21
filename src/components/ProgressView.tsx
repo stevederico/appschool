@@ -107,8 +107,6 @@ function ActivityItem({ item, onClick }: ActivityItemProps) {
     <div
       onClick={onClick}
       className="flex items-center gap-3 p-3 rounded-lg cursor-pointer bg-accent hover:bg-accent/80 transition-all"
-      data-umami-event="activity-item-clicked"
-      data-umami-event-type={item.type}
     >
       <ItemIcon size={16} className={getColor()} />
       <div className="flex-1 min-w-0">
@@ -407,7 +405,7 @@ export default function ProgressView() {
   return (
     <>
       <Header title="My Progress" />
-      <div className="p-6 max-w-4xl mx-auto" data-section-id="progress-view">
+      <div className="p-6 max-w-4xl mx-auto">
         {courses.length === 0 ? (
           <div className="text-center py-12">
             <BookOpen size={48} className="mx-auto mb-4 text-muted-foreground"/>
@@ -418,7 +416,6 @@ export default function ProgressView() {
             <button
               onClick={() => navigate('/app/courses')}
               className="bg-app text-white px-6 py-3 rounded-lg font-medium hover:opacity-90 transition-all cursor-pointer"
-              data-umami-event="progress-browse-courses-clicked"
             >
               Browse Courses
             </button>
@@ -426,7 +423,7 @@ export default function ProgressView() {
         ) : (
           <div className="space-y-6">
             {/* Overall Stats */}
-            <div className="bg-accent rounded-xl p-6" data-section-id="progress-stats">
+            <div className="bg-accent rounded-xl p-6">
               <div className="flex items-center justify-between mb-2">
                 <span className="font-semibold">Overall Progress</span>
                 <span className="text-app font-bold text-2xl">{overallProgress}%</span>
@@ -530,7 +527,6 @@ export default function ProgressView() {
                   <button
                     onClick={() => setShowAllCompleted(true)}
                     className="w-full mt-2 py-2 text-sm text-muted-foreground hover:text-foreground transition-colors"
-                    data-umami-event="progress-show-older-clicked"
                   >
                     Show {olderActivities.length} older items
                   </button>
@@ -539,7 +535,6 @@ export default function ProgressView() {
                   <button
                     onClick={() => setShowAllCompleted(false)}
                     className="w-full mt-2 py-2 text-sm text-muted-foreground hover:text-foreground transition-colors"
-                    data-umami-event="progress-hide-older-clicked"
                   >
                     Hide older items
                   </button>

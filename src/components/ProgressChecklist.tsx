@@ -126,8 +126,6 @@ function ChecklistItem({ item, type, courseSlug, completed, quiz, voiceSpeed, is
       className={`flex items-center gap-3 p-3 rounded-lg cursor-pointer transition-all ${
         completed ? 'bg-green-500/10' : 'bg-accent hover:bg-accent/80'
       }`}
-      data-umami-event="checklist-item-clicked"
-      data-umami-event-type={type}
     >
       <div
         className={`w-6 h-6 rounded-full flex items-center justify-center ${

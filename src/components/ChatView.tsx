@@ -96,7 +96,7 @@ export default function ChatView() {
         onButtonTitleClick={!isUserSubscriber ? () => showUpgradeSheet(upgradeSheetRef) : undefined}
       />
       
-      <div className="flex-1 overflow-y-auto p-6 space-y-6" data-section-id="chat-messages">
+      <div className="flex-1 overflow-y-auto p-6 space-y-6">
         {messages.map(msg => (
           <div key={msg.id} className={`flex flex-col ${msg.isMe ? 'items-end' : 'items-start'}`}>
             <div className={`max-w-sm px-4 py-3 rounded-lg ${
@@ -140,7 +140,6 @@ export default function ChatView() {
                 ? 'bg-app text-white'
                 : 'bg-accent text-foreground'
             }`}
-            data-umami-event="chat-send-clicked"
           >
             <ArrowUp size={20}/>
           </button>

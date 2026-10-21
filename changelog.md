@@ -1,3 +1,7 @@
+0.38.0
+
+  Remove analytics code
+
 0.37.0
 
   Ignore other apps

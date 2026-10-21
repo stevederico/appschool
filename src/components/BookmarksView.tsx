@@ -89,7 +89,6 @@ function BookmarkItem({ bookmark, onRemove, onNavigate }: BookmarkItemProps) {
     <div
       onClick={() => onNavigate(bookmark)}
       className="flex items-start gap-3 p-3 rounded-lg cursor-pointer bg-accent/50 hover:bg-accent transition-all"
-      data-umami-event="bookmark-item-clicked"
     >
       <Bookmark size={16} className="text-yellow-400 mt-1 flex-shrink-0"/>
       <div className="flex-1 min-w-0">
@@ -112,7 +111,6 @@ function BookmarkItem({ bookmark, onRemove, onNavigate }: BookmarkItemProps) {
         disabled={removing}
         className="p-1 opacity-40 hover:opacity-100 hover:text-red-400 transition-all cursor-pointer"
         title="Remove bookmark"
-        data-umami-event="bookmark-removed"
       >
         {removing ? (
           <Loader size={14} className="animate-spin"/>
@@ -216,7 +214,7 @@ export default function BookmarksView() {
   return (
     <>
       <Header title="Bookmarks" />
-      <div className="p-6 max-w-4xl mx-auto" data-section-id="bookmarks-view">
+      <div className="p-6 max-w-4xl mx-auto">
         {bookmarks.length === 0 ? (
           <div className="text-center py-12">
             <Bookmark size={48} className="mx-auto mb-4 text-muted-foreground"/>
@@ -227,7 +225,6 @@ export default function BookmarksView() {
             <button
               onClick={() => navigate('/app/courses')}
               className="bg-app text-white px-6 py-3 rounded-lg font-medium hover:opacity-90 transition-all cursor-pointer"
-              data-umami-event="bookmarks-browse-courses-clicked"
             >
               Browse Courses
             </button>
@@ -243,7 +240,6 @@ export default function BookmarksView() {
                 <button
                   onClick={() => toggleCourse(course.courseSlug)}
                   className="w-full flex items-center justify-between p-4 hover:bg-accent/80 transition-all cursor-pointer"
-                  data-umami-event="bookmarks-course-toggled"
                 >
                   <div className="flex items-center gap-2">
                     <BookOpen size={18} className="text-app"/>
@@ -264,7 +260,6 @@ export default function BookmarksView() {
                           <button
                             onClick={() => toggleGuide(guideKey)}
                             className="w-full flex items-center justify-between py-2 text-sm hover:text-app transition-all cursor-pointer"
-                            data-umami-event="bookmarks-guide-toggled"
                           >
                             <span className="flex items-center gap-2">
                               <FileText size={14}/>
