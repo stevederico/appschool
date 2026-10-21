@@ -1054,6 +1054,32 @@ fn payment(state: &AppState, req: &Request) -> Response {
     Response::empty(200)
 }
 
+/// Whether a Stripe subscription is for one of this app's plans.
+///
+/// Every endpoint on the Stripe account receives every app's events, so an
+/// event for another app's plan must not touch a user here who happens to
+/// share the buyer's email. A subscription without items is treated as ours.
+fn owns_subscription(state: &AppState, sub: &Json) -> bool {
+    let Some(items) = sub.path("items.data").and_then(Json::as_arr) else {
+        return true;
+    };
+    if items.is_empty() {
+        return true;
+    }
+    let owned = items.iter().any(|item| {
+        item.get("price")
+            .and_then(|p| p.get_str("lookup_key"))
+            .is_some_and(|k| state.stripe_lookup_keys.iter().any(|a| a == k))
+    });
+    if !owned {
+        state.log.info(
+            "Webhook: subscription is for another app, ignoring",
+            &[("subscription", json::s(sub.get_str("id").unwrap_or("").to_string()))],
+        );
+    }
+    owned
+}
+
 fn process_webhook(
     state: &AppState,
     event_id: &str,
@@ -1067,6 +1093,9 @@ fn process_webhook(
             | "customer.subscription.updated"
             | "customer.subscription.created"
     ) {
+        if !owns_subscription(state, obj) {
+            return Ok(());
+        }
         let Some(stripe_id) = obj.get_str("customer") else {
             state
                 .log
@@ -1118,6 +1147,9 @@ fn process_webhook(
                     return Err(Response::empty(500));
                 }
             };
+            if !owns_subscription(state, &sub_json) {
+                return Ok(());
+            }
             let email = if let Some(e) = obj.get_str("customer_email") {
                 e.to_lowercase()
             } else {
@@ -1158,6 +1190,9 @@ fn process_webhook(
                     return Err(Response::empty(500));
                 }
             };
+            if !owns_subscription(state, &sub_json) {
+                return Ok(());
+            }
             let email = match resolve_customer_email(state, stripe_id) {
                 Ok(Some(e)) => e,
                 Ok(None) => return Ok(()),
@@ -3306,6 +3341,80 @@ mod tests {
             "data":{"object":{"customer":"cus_inv"}}
         }"#;
         assert_eq!(handle(&state, signed_webhook(failed)).status, 200);
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn payment_ignores_another_apps_subscription() {
+        let mut mock = crate::stripe::StripeMock::default();
+        mock.customers
+            .insert("cus_other".into(), "shared@example.com".into());
+        let (state, dir) = stripe_state_with_mock(mock);
+        let _ = signed_up(&state, "shared@example.com");
+
+        let payload = br#"{
+            "id":"evt_other_app",
+            "type":"customer.subscription.created",
+            "data":{"object":{
+                "id":"sub_other",
+                "customer":"cus_other",
+                "status":"active",
+                "current_period_end":1893456000,
+                "items":{"data":[{"price":{"lookup_key":"another_app_monthly"}}]}
+            }}
+        }"#;
+        assert_eq!(handle(&state, signed_webhook(payload)).status, 200);
+        assert!(user_subscription(&state, "shared@example.com").is_none());
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn payment_applies_this_apps_subscription() {
+        let mut mock = crate::stripe::StripeMock::default();
+        mock.customers
+            .insert("cus_mine".into(), "mine@example.com".into());
+        let (state, dir) = stripe_state_with_mock(mock);
+        let _ = signed_up(&state, "mine@example.com");
+        let key = state.stripe_lookup_keys[0].clone();
+
+        let payload = format!(r#"{{
+            "id":"evt_mine",
+            "type":"customer.subscription.created",
+            "data":{{"object":{{
+                "id":"sub_mine",
+                "customer":"cus_mine",
+                "status":"active",
+                "current_period_end":1893456000,
+                "items":{{"data":[{{"price":{{"lookup_key":"{key}"}}}}]}}
+            }}}}
+        }}"#);
+        assert_eq!(handle(&state, signed_webhook(payload.as_bytes())).status, 200);
+        let sub = user_subscription(&state, "mine@example.com").expect("sub");
+        assert_eq!(sub.status, "active");
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn payment_checkout_for_another_app_is_ignored() {
+        let mut mock = crate::stripe::StripeMock::default();
+        mock.subscriptions.insert(
+            "sub_cs_other".into(),
+            r#"{"id":"sub_cs_other","status":"active","current_period_end":1900000000,"items":{"data":[{"price":{"lookup_key":"another_app_monthly"}}]}}"#.into(),
+        );
+        let (state, dir) = stripe_state_with_mock(mock);
+        let _ = signed_up(&state, "cs@example.com");
+
+        let payload = br#"{
+            "id":"evt_cs_other",
+            "type":"checkout.session.completed",
+            "data":{"object":{
+                "customer":"cus_cs",
+                "customer_email":"cs@example.com",
+                "subscription":"sub_cs_other"
+            }}
+        }"#;
+        assert_eq!(handle(&state, signed_webhook(payload)).status, 200);
+        assert!(user_subscription(&state, "cs@example.com").is_none());
         std::fs::remove_dir_all(&dir).ok();
     }
 

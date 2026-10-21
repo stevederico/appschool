@@ -1,3 +1,7 @@
+0.37.0
+
+  Ignore other apps
+
 0.36.0
 
   Drop dottie-analytics
