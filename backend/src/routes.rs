@@ -1093,7 +1093,26 @@ fn process_webhook(
             | "customer.subscription.updated"
             | "customer.subscription.created"
     ) {
-        if !owns_subscription(state, obj) {
+        // Stripe does not order or dedupe deliveries, so the event's snapshot
+        // can be older than what is already stored: a retried `created`
+        // (status incomplete) landing after checkout would demote a paying
+        // user. Read the subscription as it is now, like the other branches.
+        let (Some(stripe), Some(subscription_id)) = (stripe, obj.get_str("id")) else {
+            state
+                .log
+                .error("Webhook missing subscription ID", &[("type", json::s(event_type))]);
+            return Err(Response::empty(400));
+        };
+        let sub_json = match stripe.retrieve_subscription(subscription_id) {
+            Ok(v) => v,
+            Err(e) => {
+                state
+                    .log
+                    .error("Webhook processing error", &[("error", json::s(e.to_string()))]);
+                return Err(Response::empty(500));
+            }
+        };
+        if !owns_subscription(state, &sub_json) {
             return Ok(());
         }
         let Some(stripe_id) = obj.get_str("customer") else {
@@ -1107,7 +1126,7 @@ fn process_webhook(
             Ok(None) => return Err(Response::empty(400)),
             Err(_) => return Err(Response::empty(400)),
         };
-        if period_end(obj).is_none() {
+        if period_end(&sub_json).is_none() {
             state.log.error(
                 "Webhook: subscription event has no current_period_end",
                 &[
@@ -1116,11 +1135,7 @@ fn process_webhook(
                 ],
             );
         }
-        let sub = Subscription {
-            stripe_id: stripe_id.to_string(),
-            expires: period_end(obj),
-            status: obj.get_str("status").unwrap_or("").to_string(),
-        };
+        let sub = build_sub_patch(stripe_id, &sub_json);
         if apply_sub_patch(state, &email, &sub) {
             state.log.info(
                 "Subscription updated",
@@ -3216,6 +3231,10 @@ mod tests {
         let mut mock = crate::stripe::StripeMock::default();
         mock.customers
             .insert("cus_new".into(), "subber@example.com".into());
+        mock.subscriptions.insert(
+            "sub_1".into(),
+            r#"{"id":"sub_1","customer":"cus_new","status":"active","current_period_end":1893456000}"#.into(),
+        );
         let (state, dir) = stripe_state_with_mock(mock);
         let _ = signed_up(&state, "subber@example.com");
 
@@ -3250,6 +3269,14 @@ mod tests {
         let mut mock = crate::stripe::StripeMock::default();
         mock.customers
             .insert("cus_life".into(), "life@example.com".into());
+        mock.subscriptions.insert(
+            "sub_life_due".into(),
+            r#"{"id":"sub_life_due","status":"past_due","current_period_end":1890000000}"#.into(),
+        );
+        mock.subscriptions.insert(
+            "sub_life_gone".into(),
+            r#"{"id":"sub_life_gone","status":"canceled","current_period_end":1890000000}"#.into(),
+        );
         let (state, dir) = stripe_state_with_mock(mock);
         let _ = signed_up(&state, "life@example.com");
 
@@ -3257,6 +3284,7 @@ mod tests {
             "id":"evt_sub_updated",
             "type":"customer.subscription.updated",
             "data":{"object":{
+                "id":"sub_life_due",
                 "customer":"cus_life",
                 "status":"past_due",
                 "current_period_end":1890000000
@@ -3270,6 +3298,7 @@ mod tests {
             "id":"evt_sub_deleted",
             "type":"customer.subscription.deleted",
             "data":{"object":{
+                "id":"sub_life_gone",
                 "customer":"cus_life",
                 "status":"canceled",
                 "current_period_end":1890000000
@@ -3306,6 +3335,51 @@ mod tests {
         assert_eq!(sub.stripe_id, "cus_buyer");
         assert_eq!(sub.status, "active");
         assert_eq!(sub.expires, Some(1_900_000_000));
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn payment_stale_subscription_created_after_checkout_keeps_user_subscribed() {
+        let mut mock = crate::stripe::StripeMock::default();
+        mock.customers
+            .insert("cus_late".into(), "late@example.com".into());
+        mock.subscriptions.insert(
+            "sub_late".into(),
+            r#"{"id":"sub_late","status":"active","current_period_end":1900000000}"#.into(),
+        );
+        let (state, dir) = stripe_state_with_mock(mock);
+        let _ = signed_up(&state, "late@example.com");
+
+        let checkout = br#"{
+            "id":"evt_late_cs",
+            "type":"checkout.session.completed",
+            "data":{"object":{
+                "customer":"cus_late",
+                "customer_email":"late@example.com",
+                "subscription":"sub_late"
+            }}
+        }"#;
+        assert_eq!(handle(&state, signed_webhook(checkout)).status, 200);
+        assert_eq!(user_subscription(&state, "late@example.com").expect("sub").status, "active");
+
+        // A retried `created` whose snapshot predates the first payment.
+        let stale = br#"{
+            "id":"evt_late_created",
+            "type":"customer.subscription.created",
+            "data":{"object":{
+                "id":"sub_late",
+                "customer":"cus_late",
+                "status":"incomplete",
+                "current_period_end":1897000000
+            }}
+        }"#;
+        let res = handle(&state, signed_webhook(stale));
+        assert_eq!(res.status, 200, "{}", String::from_utf8_lossy(&res.body));
+
+        let sub = user_subscription(&state, "late@example.com").expect("sub");
+        assert_eq!(sub.status, "active");
+        assert_eq!(sub.expires, Some(1_900_000_000));
+        assert!(is_subscriber(&sub));
         std::fs::remove_dir_all(&dir).ok();
     }
 
@@ -3349,6 +3423,10 @@ mod tests {
         let mut mock = crate::stripe::StripeMock::default();
         mock.customers
             .insert("cus_other".into(), "shared@example.com".into());
+        mock.subscriptions.insert(
+            "sub_other".into(),
+            r#"{"id":"sub_other","status":"active","current_period_end":1893456000,"items":{"data":[{"price":{"lookup_key":"another_app_monthly"}}]}}"#.into(),
+        );
         let (state, dir) = stripe_state_with_mock(mock);
         let _ = signed_up(&state, "shared@example.com");
 
@@ -3373,6 +3451,10 @@ mod tests {
         let mut mock = crate::stripe::StripeMock::default();
         mock.customers
             .insert("cus_mine".into(), "mine@example.com".into());
+        mock.subscriptions.insert(
+            "sub_mine".into(),
+            r#"{"id":"sub_mine","status":"active","current_period_end":1893456000,"items":{"data":[{"price":{"lookup_key":"pro_monthly"}}]}}"#.into(),
+        );
         let (state, dir) = stripe_state_with_mock(mock);
         let _ = signed_up(&state, "mine@example.com");
         let key = state.stripe_lookup_keys[0].clone();
@@ -3423,6 +3505,10 @@ mod tests {
         let mut mock = crate::stripe::StripeMock::default();
         mock.customers
             .insert("cus_idem".into(), "idem@example.com".into());
+        mock.subscriptions.insert(
+            "sub_idem".into(),
+            r#"{"id":"sub_idem","status":"active","current_period_end":1920000000}"#.into(),
+        );
         let (state, dir) = stripe_state_with_mock(mock);
         let _ = signed_up(&state, "idem@example.com");
 
@@ -3430,6 +3516,7 @@ mod tests {
             "id":"evt_idem_1",
             "type":"customer.subscription.updated",
             "data":{"object":{
+                "id":"sub_idem",
                 "customer":"cus_idem",
                 "status":"active",
                 "current_period_end":1920000000

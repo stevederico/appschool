@@ -1,3 +1,8 @@
+0.39.0
+
+  Refetch subscription webhooks
+  Add stale event test
+
 0.38.0
 
   Remove analytics code
