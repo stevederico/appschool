@@ -1,3 +1,7 @@
+0.41.0
+
+  Pin skateboard-ui 5.11.0
+
 0.40.0
 
   Match subscription id
