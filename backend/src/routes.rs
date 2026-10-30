@@ -917,28 +917,69 @@ fn period_end(obj: &Json) -> Option<i64> {
     })
 }
 
-fn apply_sub_patch(state: &AppState, email: &str, sub: &Subscription) -> bool {
-    match state.pool.find_user(&UserQuery::Email(email.to_string())) {
-        Ok(Some(u)) => match state.pool.update_user_subscription(&u.id, sub) {
-            Ok(_) => true,
-            Err(e) => {
-                state
-                    .log
-                    .error("Webhook processing error", &[("error", json::s(e.to_string()))]);
-                false
-            }
-        },
+/// Subscription statuses under which a different subscription may replace the
+/// one a user already has: a new paid or trialing subscription takes over.
+const TAKEOVER_STATUSES: &[&str] = &["active", "trialing"];
+
+/// True when `patch` describes some other, non-paying subscription than the
+/// one stored in `current`, so writing it would demote the user.
+///
+/// One email can own several subscriptions over time (each checkout makes a
+/// new Stripe customer), and Stripe keeps sending events for the old ones: a
+/// `customer.subscription.deleted` for a lapsed plan, or `incomplete_expired`
+/// for an abandoned checkout. Those must not overwrite a newer subscription.
+/// Rows written before `subscription_id` existed have no stored ID and accept
+/// any patch, which then records one.
+fn is_superseded(current: Option<&Subscription>, patch: &Subscription) -> bool {
+    let current_id = current.and_then(|c| c.subscription_id.as_deref());
+    let (Some(current_id), Some(incoming_id)) = (current_id, patch.subscription_id.as_deref())
+    else {
+        return false;
+    };
+    current_id != incoming_id && !TAKEOVER_STATUSES.contains(&patch.status.as_str())
+}
+
+/// Write a webhook's subscription state to the user with `email`.
+///
+/// Returns `Ok(true)` when written, `Ok(false)` when there is nothing to do (no
+/// such user, or the patch is for a superseded subscription).
+///
+/// # Errors
+/// `Err(())` on a database failure, already logged. The caller must answer
+/// 500 without recording the event, so Stripe retries it.
+fn apply_sub_patch(state: &AppState, email: &str, sub: &Subscription) -> Result<bool, ()> {
+    let user = match state.pool.find_user(&UserQuery::Email(email.to_string())) {
+        Ok(Some(u)) => u,
         Ok(None) => {
             state
                 .log
                 .warn("Webhook: No user found for email", &[("email", json::s(redact_email(email)))]);
-            false
+            return Ok(false);
         }
         Err(e) => {
             state
                 .log
                 .error("Webhook processing error", &[("error", json::s(e.to_string()))]);
-            false
+            return Err(());
+        }
+    };
+    if is_superseded(user.subscription.as_ref(), sub) {
+        state.log.info(
+            "Webhook: event is for a superseded subscription, ignoring",
+            &[
+                ("subscription", json::s(sub.subscription_id.clone().unwrap_or_default())),
+                ("status", json::s(sub.status.clone())),
+            ],
+        );
+        return Ok(false);
+    }
+    match state.pool.update_user_subscription(&user.id, sub) {
+        Ok(_) => Ok(true),
+        Err(e) => {
+            state
+                .log
+                .error("Webhook processing error", &[("error", json::s(e.to_string()))]);
+            Err(())
         }
     }
 }
@@ -966,6 +1007,7 @@ fn build_sub_patch(stripe_id: &str, stripe_sub: &Json) -> Subscription {
         stripe_id: stripe_id.to_string(),
         expires: period_end(stripe_sub),
         status: stripe_sub.get_str("status").unwrap_or("").to_string(),
+        subscription_id: stripe_sub.get_str("id").map(str::to_string),
     }
 }
 
@@ -1136,7 +1178,7 @@ fn process_webhook(
             );
         }
         let sub = build_sub_patch(stripe_id, &sub_json);
-        if apply_sub_patch(state, &email, &sub) {
+        if apply_sub_patch(state, &email, &sub).map_err(|()| Response::empty(500))? {
             state.log.info(
                 "Subscription updated",
                 &[
@@ -1175,7 +1217,7 @@ fn process_webhook(
                 }
             };
             let patch = build_sub_patch(stripe_id, &sub_json);
-            if apply_sub_patch(state, &email, &patch) {
+            if apply_sub_patch(state, &email, &patch).map_err(|()| Response::empty(500))? {
                 state.log.info(
                     "Checkout completed",
                     &[
@@ -1214,7 +1256,7 @@ fn process_webhook(
                 Err(_) => return Err(Response::empty(500)),
             };
             let patch = build_sub_patch(stripe_id, &sub_json);
-            if apply_sub_patch(state, &email, &patch) {
+            if apply_sub_patch(state, &email, &patch).map_err(|()| Response::empty(500))? {
                 state.log.info("Invoice paid", &[("email", json::s(redact_email(&email)))]);
             }
         }
@@ -2989,6 +3031,7 @@ mod tests {
                     stripe_id: "cus_mine".into(),
                     expires: None,
                     status: "active".into(),
+                    subscription_id: None,
                 },
             )
             .expect("set subscription");
@@ -3255,6 +3298,7 @@ mod tests {
         assert_eq!(sub.stripe_id, "cus_new");
         assert_eq!(sub.status, "active");
         assert_eq!(sub.expires, Some(1_893_456_000));
+        assert_eq!(sub.subscription_id.as_deref(), Some("sub_1"));
 
         assert!(state
             .pool
@@ -3269,22 +3313,25 @@ mod tests {
         let mut mock = crate::stripe::StripeMock::default();
         mock.customers
             .insert("cus_life".into(), "life@example.com".into());
+        mock.customers
+            .insert("cus_gone".into(), "gone@example.com".into());
         mock.subscriptions.insert(
-            "sub_life_due".into(),
-            r#"{"id":"sub_life_due","status":"past_due","current_period_end":1890000000}"#.into(),
+            "sub_life".into(),
+            r#"{"id":"sub_life","status":"past_due","current_period_end":1890000000}"#.into(),
         );
         mock.subscriptions.insert(
-            "sub_life_gone".into(),
-            r#"{"id":"sub_life_gone","status":"canceled","current_period_end":1890000000}"#.into(),
+            "sub_gone".into(),
+            r#"{"id":"sub_gone","status":"canceled","current_period_end":1890000000}"#.into(),
         );
         let (state, dir) = stripe_state_with_mock(mock);
         let _ = signed_up(&state, "life@example.com");
+        let _ = signed_up(&state, "gone@example.com");
 
         let updated = br#"{
             "id":"evt_sub_updated",
             "type":"customer.subscription.updated",
             "data":{"object":{
-                "id":"sub_life_due",
+                "id":"sub_life",
                 "customer":"cus_life",
                 "status":"past_due",
                 "current_period_end":1890000000
@@ -3298,14 +3345,14 @@ mod tests {
             "id":"evt_sub_deleted",
             "type":"customer.subscription.deleted",
             "data":{"object":{
-                "id":"sub_life_gone",
-                "customer":"cus_life",
+                "id":"sub_gone",
+                "customer":"cus_gone",
                 "status":"canceled",
                 "current_period_end":1890000000
             }}
         }"#;
         assert_eq!(handle(&state, signed_webhook(deleted)).status, 200);
-        let sub = user_subscription(&state, "life@example.com").expect("sub");
+        let sub = user_subscription(&state, "gone@example.com").expect("sub");
         assert_eq!(sub.status, "canceled");
         std::fs::remove_dir_all(&dir).ok();
     }
@@ -3380,6 +3427,159 @@ mod tests {
         assert_eq!(sub.status, "active");
         assert_eq!(sub.expires, Some(1_900_000_000));
         assert!(is_subscriber(&sub));
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn payment_subscription_event_stripe_error_is_retried() {
+        let mut mock = crate::stripe::StripeMock::default();
+        mock.customers
+            .insert("cus_miss".into(), "miss@example.com".into());
+        // No `sub_miss` in the mock: the re-fetch fails with a 404.
+        let (state, dir) = stripe_state_with_mock(mock);
+        let _ = signed_up(&state, "miss@example.com");
+
+        let payload = br#"{
+            "id":"evt_sub_miss",
+            "type":"customer.subscription.updated",
+            "data":{"object":{
+                "id":"sub_miss",
+                "customer":"cus_miss",
+                "status":"active",
+                "current_period_end":1900000000
+            }}
+        }"#;
+        assert_eq!(handle(&state, signed_webhook(payload)).status, 500);
+        assert!(state
+            .pool
+            .find_webhook_event("evt_sub_miss")
+            .expect("find")
+            .is_none());
+        assert_eq!(user_subscription(&state, "miss@example.com"), None);
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn payment_subscription_event_without_id_is_rejected() {
+        let mut mock = crate::stripe::StripeMock::default();
+        mock.customers
+            .insert("cus_noid".into(), "noid@example.com".into());
+        let (state, dir) = stripe_state_with_mock(mock);
+        let _ = signed_up(&state, "noid@example.com");
+
+        let payload = br#"{
+            "id":"evt_sub_noid",
+            "type":"customer.subscription.updated",
+            "data":{"object":{"customer":"cus_noid","status":"active"}}
+        }"#;
+        assert_eq!(handle(&state, signed_webhook(payload)).status, 400);
+        assert_eq!(user_subscription(&state, "noid@example.com"), None);
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn payment_old_subscription_deleted_after_resubscribe_keeps_user_subscribed() {
+        let mut mock = crate::stripe::StripeMock::default();
+        // Each checkout makes a new Stripe customer for the same email.
+        mock.customers
+            .insert("cus_old".into(), "again@example.com".into());
+        mock.customers
+            .insert("cus_again".into(), "again@example.com".into());
+        mock.subscriptions.insert(
+            "sub_old".into(),
+            r#"{"id":"sub_old","status":"canceled","current_period_end":1880000000}"#.into(),
+        );
+        mock.subscriptions.insert(
+            "sub_again".into(),
+            r#"{"id":"sub_again","status":"active","current_period_end":1900000000}"#.into(),
+        );
+        let (state, dir) = stripe_state_with_mock(mock);
+        let _ = signed_up(&state, "again@example.com");
+
+        let deleted = |event_id: &str| {
+            format!(
+                r#"{{"id":"{event_id}","type":"customer.subscription.deleted",
+                "data":{{"object":{{"id":"sub_old","customer":"cus_old","status":"canceled"}}}}}}"#
+            )
+        };
+        // The first plan lapses.
+        assert_eq!(handle(&state, signed_webhook(deleted("evt_old_del").as_bytes())).status, 200);
+        assert_eq!(user_subscription(&state, "again@example.com").expect("sub").status, "canceled");
+
+        // The user subscribes again: the new subscription takes over.
+        let checkout = br#"{
+            "id":"evt_again_cs",
+            "type":"checkout.session.completed",
+            "data":{"object":{
+                "customer":"cus_again",
+                "customer_email":"again@example.com",
+                "subscription":"sub_again"
+            }}
+        }"#;
+        assert_eq!(handle(&state, signed_webhook(checkout)).status, 200);
+        assert_eq!(user_subscription(&state, "again@example.com").expect("sub").status, "active");
+
+        // A late redelivery of the old plan's deletion must not re-lock them.
+        let res = handle(&state, signed_webhook(deleted("evt_old_del_retry").as_bytes()));
+        assert_eq!(res.status, 200, "{}", String::from_utf8_lossy(&res.body));
+
+        let sub = user_subscription(&state, "again@example.com").expect("sub");
+        assert_eq!(sub.status, "active");
+        assert_eq!(sub.stripe_id, "cus_again");
+        assert_eq!(sub.subscription_id.as_deref(), Some("sub_again"));
+        assert!(is_subscriber(&sub));
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn payment_db_error_returns_500_and_is_not_recorded() {
+        let mut mock = crate::stripe::StripeMock::default();
+        mock.subscriptions.insert(
+            "sub_dbfail".into(),
+            r#"{"id":"sub_dbfail","status":"active","current_period_end":1900000000}"#.into(),
+        );
+        let (state, dir) = stripe_state_with_mock(mock);
+        let _ = signed_up(&state, "dbfail@example.com");
+
+        // Fail only the subscription write; the dedupe lookup and user read work.
+        state
+            .pool
+            .with(|db| {
+                db.exec(
+                    "CREATE TRIGGER fail_sub_write BEFORE UPDATE ON Users
+                     BEGIN SELECT RAISE(ABORT, 'simulated write failure'); END",
+                )
+            })
+            .expect("trigger");
+
+        let payload = br#"{
+            "id":"evt_dbfail_cs",
+            "type":"checkout.session.completed",
+            "data":{"object":{
+                "customer":"cus_dbfail",
+                "customer_email":"dbfail@example.com",
+                "subscription":"sub_dbfail"
+            }}
+        }"#;
+        assert_eq!(handle(&state, signed_webhook(payload)).status, 500);
+        assert!(state
+            .pool
+            .find_webhook_event("evt_dbfail_cs")
+            .expect("find")
+            .is_none());
+
+        // Once the database recovers, Stripe's retry of the same event applies.
+        state
+            .pool
+            .with(|db| db.exec("DROP TRIGGER fail_sub_write"))
+            .expect("drop trigger");
+        assert_eq!(handle(&state, signed_webhook(payload)).status, 200);
+        assert_eq!(user_subscription(&state, "dbfail@example.com").expect("sub").status, "active");
+        assert!(state
+            .pool
+            .find_webhook_event("evt_dbfail_cs")
+            .expect("find")
+            .is_some());
         std::fs::remove_dir_all(&dir).ok();
     }
 

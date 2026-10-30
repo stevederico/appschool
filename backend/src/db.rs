@@ -805,6 +805,7 @@ const SCHEMA: &[&str] = &[
         subscription_stripeID TEXT,
         subscription_expires INTEGER,
         subscription_status TEXT,
+        subscription_id TEXT,
         usage_count INTEGER DEFAULT 0,
         usage_reset_at INTEGER
       )",
@@ -832,6 +833,7 @@ const USERS_COLUMNS: &[(&str, &str)] = &[
     ("subscription_stripeID", "TEXT"),
     ("subscription_expires", "INTEGER"),
     ("subscription_status", "TEXT"),
+    ("subscription_id", "TEXT"),
     ("usage_count", "INTEGER DEFAULT 0"),
     ("usage_reset_at", "INTEGER"),
 ];
@@ -1052,6 +1054,9 @@ pub struct Subscription {
     pub expires: Option<i64>,
     /// Stripe subscription status; empty string when the column is NULL.
     pub status: String,
+    /// Stripe subscription ID (`sub_...`) the other fields describe, stored in
+    /// `subscription_id`. `None` for rows written before the column existed.
+    pub subscription_id: Option<String>,
 }
 
 /// Free-tier usage counter stored flat in `usage_*` columns.
@@ -1146,6 +1151,10 @@ fn user_from_row(row: &Row) -> Option<User> {
             expires: row.int("subscription_expires"),
             // JS: `?? ''`.
             status: row.text("subscription_status").unwrap_or("").to_string(),
+            subscription_id: row
+                .text("subscription_id")
+                .filter(|id| !id.is_empty())
+                .map(str::to_string),
         }),
         _ => None,
     };
@@ -1324,12 +1333,14 @@ impl Pool {
                 "UPDATE Users SET
         subscription_stripeID = ?,
         subscription_expires = ?,
-        subscription_status = ?
+        subscription_status = ?,
+        subscription_id = ?
         WHERE _id = ?",
                 &[
                     Value::Text(sub.stripe_id.clone()),
                     sub.expires.map_or(Value::Null, Value::Int),
                     Value::Text(sub.status.clone()),
+                    sub.subscription_id.clone().map_or(Value::Null, Value::Text),
                     Value::Text(id.to_string()),
                 ],
             )?;
@@ -2027,6 +2038,7 @@ mod tests {
             stripe_id: "cus_123".into(),
             expires: Some(2000),
             status: "active".into(),
+            subscription_id: Some("sub_123".into()),
         };
         assert_eq!(
             pool.update_user_subscription("u1", &sub)
@@ -2053,6 +2065,7 @@ mod tests {
                 stripe_id: "cus_123".into(),
                 expires: Some(0),
                 status: "active".into(),
+                subscription_id: None,
             },
         )
         .expect("update succeeds");

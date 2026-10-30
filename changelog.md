@@ -1,3 +1,8 @@
+0.40.0
+
+  Match subscription id
+  Retry webhook DB errors
+
 0.39.0
 
   Refetch subscription webhooks
