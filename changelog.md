@@ -1,3 +1,8 @@
+0.41.1
+
+  Override dompurify 3.4.17
+  Override prismjs 1.30.0
+
 0.41.0
 
   Pin skateboard-ui 5.11.0

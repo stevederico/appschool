@@ -1,7 +1,7 @@
 {
   "name": "appschool-web",
   "private": false,
-  "version": "0.41.0",
+  "version": "0.41.1",
   "skateboardVersion": "5.6.0",
   "type": "module",
   "scripts": {
@@ -42,5 +42,9 @@
   },
   "engines": {
     "node": ">=24.0.0"
+  },
+  "overrides": {
+    "dompurify": "3.4.17",
+    "prismjs": "1.30.0"
   }
 }
