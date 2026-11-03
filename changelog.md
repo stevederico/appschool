@@ -1,3 +1,7 @@
+0.41.2
+
+  Bump skateboard-ui 5.11.4
+
 0.41.1
 
   Override dompurify 3.4.17
