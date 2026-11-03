@@ -1,3 +1,7 @@
+0.41.3
+
+  Pin base images by digest
+
 0.41.2
 
   Bump skateboard-ui 5.11.4
