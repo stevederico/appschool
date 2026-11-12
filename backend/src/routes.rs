@@ -3,7 +3,7 @@
 //! One function per route. Status codes, JSON error bodies, and cookie
 //! attributes match the Node server so a parity harness can byte-diff them.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
 use crate::auth::{self, JwtError, JwtPayload, TOKEN_EXPIRATION_DAYS};
@@ -52,7 +52,7 @@ fn dispatch(state: &AppState, req: &Request) -> Response {
         ("POST", "/api/portal") => portal(state, req),
         ("POST", "/api/xai/token") => xai_token(state, req),
         // Literals before `/api/courses/:slug` and `/api/bookmarks/:id`.
-        ("GET", "/api/courses") => courses_list(state),
+        ("GET", "/api/courses") => courses_list(state, req),
         ("GET", "/api/bookmarks") => bookmarks_list(state, req),
         ("DELETE", p) if p.starts_with("/api/bookmarks/") => bookmark_delete(state, req, p),
         ("GET", p) if p.starts_with("/api/progress/") => progress_get(state, req, p),
@@ -191,6 +191,16 @@ fn require_auth(state: &AppState, req: &Request) -> Result<String, Response> {
             Err(err_json(401, "Invalid token"))
         }
     }
+}
+
+/// The signed-in user's id, or `None` for an anonymous request.
+///
+/// For public routes that only personalise their response. A missing, invalid
+/// or expired token is treated as "not signed in" and never produces an error.
+fn optional_auth(state: &AppState, req: &Request) -> Option<String> {
+    let secret = state.jwt_secret.as_deref()?;
+    let token = req.cookie("token")?;
+    auth::jwt_verify(&token, secret).ok().map(|p| p.user_id)
 }
 
 /// CSRF check for a state-changing request.
@@ -1688,7 +1698,7 @@ fn courses_dispatch(state: &AppState, req: &Request, method: &str, path: &str) -
     let rest = path.strip_prefix("/api/courses/").unwrap_or("");
     let segs: Vec<&str> = rest.split('/').filter(|s| !s.is_empty()).collect();
     match (method, segs.as_slice()) {
-        ("GET", [slug]) => course_get(state, slug),
+        ("GET", [slug]) => course_get(state, req, slug),
         ("GET", [slug, "guides"]) => guides_list(state, slug),
         ("GET", [slug, "guides", guide_slug]) => guide_get(state, slug, guide_slug),
         ("GET", [slug, "guides", guide_slug, "bookmarks"]) => {
@@ -1718,22 +1728,63 @@ fn courses_dispatch(state: &AppState, req: &Request, method: &str, path: &str) -
     }
 }
 
-fn courses_list(state: &AppState) -> Response {
-    match query_all(
+/// A course as JSON with the caller's `isEnrolled` flag attached.
+fn course_json_for(row: &db::Row, enrolled: bool) -> Json {
+    let mut json = course_json(row);
+    if let Json::Obj(m) = &mut json {
+        m.insert("isEnrolled".into(), Json::Bool(enrolled));
+    }
+    json
+}
+
+fn courses_list(state: &AppState, req: &Request) -> Response {
+    let rows = match query_all(
         state,
         "SELECT * FROM Courses WHERE published = 1 ORDER BY order_index ASC",
         &[],
     ) {
-        Ok(rows) => json_res(200, &Json::Arr(rows.iter().map(course_json).collect())),
-        Err(r) => r,
-    }
+        Ok(rows) => rows,
+        Err(r) => return r,
+    };
+    let enrolled = match optional_auth(state, req) {
+        Some(user_id) => match query_all(
+            state,
+            "SELECT courseId FROM Enrollments WHERE userId = ? AND status = 'active'",
+            &[t(user_id)],
+        ) {
+            Ok(rows) => rows,
+            Err(r) => return r,
+        },
+        None => Vec::new(),
+    };
+    let enrolled: BTreeSet<&str> = enrolled.iter().filter_map(|r| r.text("courseId")).collect();
+    let courses = rows
+        .iter()
+        .map(|row| {
+            let is_enrolled = row.text("_id").is_some_and(|id| enrolled.contains(id));
+            course_json_for(row, is_enrolled)
+        })
+        .collect();
+    json_res(200, &Json::Arr(courses))
 }
 
-fn course_get(state: &AppState, slug: &str) -> Response {
-    match find_course(state, slug) {
-        Ok(row) => json_res(200, &course_json(&row)),
-        Err(r) => r,
-    }
+fn course_get(state: &AppState, req: &Request, slug: &str) -> Response {
+    let row = match find_course(state, slug) {
+        Ok(row) => row,
+        Err(r) => return r,
+    };
+    let enrolled = match (optional_auth(state, req), row.text("_id")) {
+        (Some(user_id), Some(id)) => match query_one(
+            state,
+            "SELECT _id FROM Enrollments WHERE userId = ? AND courseId = ? AND status = 'active'",
+            &[t(user_id), t(id)],
+        ) {
+            Ok(found) => found.is_some(),
+            Err(r) => return r,
+        },
+        _ => false,
+    };
+    json_res(200, &course_json_for(&row, enrolled))
 }
 
 fn guides_list(state: &AppState, slug: &str) -> Response {
@@ -3896,6 +3947,111 @@ mod tests {
         assert_eq!(json_body(&res).get_str("title"), Some("JavaScript"));
         let res = handle(&state, Request::for_test("GET", "/api/courses/missing"));
         assert_eq!(res.status, 404);
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// `isEnrolled` of course `slug` as reported by GET `/api/courses`.
+    fn listed_enrolled(res: &Response, slug: &str) -> Option<Json> {
+        assert_eq!(res.status, 200, "{}", String::from_utf8_lossy(&res.body));
+        let body = json_body(res);
+        let course = body
+            .as_arr()?
+            .iter()
+            .find(|c| c.get_str("slug") == Some(slug))?;
+        course.get("isEnrolled").cloned()
+    }
+
+    #[test]
+    fn anonymous_course_is_not_enrolled() {
+        let (state, dir) = test_state();
+        insert_course(&state, "js", "JavaScript");
+        let res = handle(&state, Request::for_test("GET", "/api/courses/js"));
+        assert_eq!(res.status, 200);
+        assert_eq!(json_body(&res).get("isEnrolled"), Some(&Json::Bool(false)));
+        let res = handle(&state, Request::for_test("GET", "/api/courses"));
+        assert_eq!(listed_enrolled(&res, "js"), Some(Json::Bool(false)));
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn is_enrolled_flips_after_enroll() {
+        let (state, dir) = test_state();
+        insert_course(&state, "js", "JavaScript");
+        insert_course(&state, "swift", "Swift");
+        let signup = signed_up(&state, "flag@example.com");
+        let get = |path: &str, who: &Response| {
+            let mut req = Request::for_test("GET", path);
+            replay_cookies(&mut req, &[who], false);
+            handle(&state, req)
+        };
+
+        let res = get("/api/courses/js", &signup);
+        assert_eq!(res.status, 200);
+        assert_eq!(json_body(&res).get("isEnrolled"), Some(&Json::Bool(false)));
+        assert_eq!(
+            listed_enrolled(&get("/api/courses", &signup), "js"),
+            Some(Json::Bool(false))
+        );
+
+        let mut req = Request::for_test("POST", "/api/courses/js/enroll");
+        replay_cookies(&mut req, &[&signup], true);
+        req.set_test_body(b"{}".to_vec());
+        let res = handle(&state, req);
+        assert_eq!(res.status, 200, "{}", String::from_utf8_lossy(&res.body));
+
+        let res = get("/api/courses/js", &signup);
+        assert_eq!(res.status, 200);
+        assert_eq!(json_body(&res).get("isEnrolled"), Some(&Json::Bool(true)));
+        let list = get("/api/courses", &signup);
+        assert_eq!(listed_enrolled(&list, "js"), Some(Json::Bool(true)));
+        assert_eq!(listed_enrolled(&list, "swift"), Some(Json::Bool(false)));
+        let res = get("/api/courses/swift", &signup);
+        assert_eq!(json_body(&res).get("isEnrolled"), Some(&Json::Bool(false)));
+
+        // Another user and an anonymous caller still see it as not enrolled.
+        let other = signed_up(&state, "other-flag@example.com");
+        let res = get("/api/courses/js", &other);
+        assert_eq!(json_body(&res).get("isEnrolled"), Some(&Json::Bool(false)));
+        assert_eq!(
+            listed_enrolled(&get("/api/courses", &other), "js"),
+            Some(Json::Bool(false))
+        );
+        let res = handle(&state, Request::for_test("GET", "/api/courses/js"));
+        assert_eq!(json_body(&res).get("isEnrolled"), Some(&Json::Bool(false)));
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn bad_cookie_course_is_200_not_enrolled() {
+        let (state, dir) = test_state();
+        insert_course(&state, "js", "JavaScript");
+        let secret = state.jwt_secret.clone().expect("secret");
+        let expired = auth::jwt_sign(
+            &JwtPayload {
+                user_id: "someone".to_string(),
+                exp: Some(1),
+            },
+            &secret,
+        );
+        for token in ["not-a-jwt".to_string(), expired] {
+            for path in ["/api/courses/js", "/api/courses"] {
+                let mut req = Request::for_test("GET", path);
+                req.set_test_header("cookie", &format!("token={token}"));
+                let res = handle(&state, req);
+                assert_eq!(
+                    res.status,
+                    200,
+                    "{path}: {}",
+                    String::from_utf8_lossy(&res.body)
+                );
+                let flag = if path == "/api/courses" {
+                    listed_enrolled(&res, "js")
+                } else {
+                    json_body(&res).get("isEnrolled").cloned()
+                };
+                assert_eq!(flag, Some(Json::Bool(false)), "{path}");
+            }
+        }
         std::fs::remove_dir_all(&dir).ok();
     }
 

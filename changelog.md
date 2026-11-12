@@ -1,3 +1,8 @@
+0.41.5
+
+  Return isEnrolled on courses
+  Add enrollment flag tests
+
 0.41.4
 
   Bump debian runtime base to bookworm-20261104-slim (apt 2.6.2)
