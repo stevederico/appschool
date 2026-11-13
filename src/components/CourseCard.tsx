@@ -46,19 +46,19 @@ export default function CourseCard({ course, onEnroll }: CourseCardProps) {
   return (
     <div
       onClick={handleClick}
-      className={`bg-accent rounded-xl p-6 cursor-pointer hover:bg-accent/80 transition-all border ${course.isEnrolled ? 'border-app' : 'border-transparent hover:border-app/30'}`}
+      className={`min-w-0 bg-accent rounded-xl p-4 sm:p-6 cursor-pointer hover:bg-accent/80 transition-all border ${course.isEnrolled ? 'border-app' : 'border-transparent hover:border-app/30'}`}
     >
-      <div className="flex items-start justify-between mb-4">
-        <h3 className="text-xl font-bold">{course.title}</h3>
+      <div className="flex items-start justify-between gap-3 mb-4">
+        <h3 className="text-xl font-bold min-w-0">{course.title}</h3>
         {course.isEnrolled ? (
-          <div className="bg-app/20 text-app px-3 py-1 rounded-full text-sm flex items-center gap-1">
+          <div className="bg-app/20 text-app px-3 py-1 rounded-full text-sm flex items-center gap-1 shrink-0">
             <Check size={14}/>
             Enrolled
           </div>
         ) : (
           <button
             onClick={handleEnroll}
-            className="bg-app text-white px-4 py-1.5 rounded-lg text-sm font-medium hover:opacity-90 transition-all cursor-pointer"
+            className="bg-app text-white px-4 py-1.5 rounded-lg text-sm font-medium shrink-0 whitespace-nowrap hover:opacity-90 transition-all cursor-pointer"
           >
             Enroll
           </button>
@@ -67,7 +67,7 @@ export default function CourseCard({ course, onEnroll }: CourseCardProps) {
 
       <p className="text-muted-foreground mb-4 line-clamp-2">{course.description}</p>
 
-      <div className="flex items-center gap-4 text-sm text-muted-foreground mb-4">
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-muted-foreground mb-4">
         <span className="flex items-center gap-1">
           <Clock size={16}/>
           ~{course.estimatedHours || 20} hours

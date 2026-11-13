@@ -214,7 +214,7 @@ export default function BookmarksView() {
   return (
     <>
       <Header title="Bookmarks" />
-      <div className="p-6 max-w-4xl mx-auto">
+      <div className="w-full p-4 sm:p-6 max-w-4xl mx-auto">
         {bookmarks.length === 0 ? (
           <div className="text-center py-12">
             <Bookmark size={48} className="mx-auto mb-4 text-muted-foreground"/>

@@ -1,3 +1,9 @@
+0.41.8
+
+  Fix Enroll Now cut off on mobile
+  Wrap course tags and stats
+  Keep pages within phone width
+
 0.41.7
 
   Load theme script from file

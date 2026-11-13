@@ -284,7 +284,7 @@ export default function GuideView() {
 
   return (
     <>
-      <div className="p-6 max-w-4xl mx-auto">
+      <div className="w-full p-4 sm:p-6 max-w-4xl mx-auto">
         {/* Guide Meta */}
         <div className="flex items-center justify-between mb-6">
           <div className="flex items-center gap-4 text-sm text-muted-foreground">

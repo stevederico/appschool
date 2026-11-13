@@ -405,7 +405,7 @@ export default function ProgressView() {
   return (
     <>
       <Header title="My Progress" />
-      <div className="p-6 max-w-4xl mx-auto">
+      <div className="w-full p-4 sm:p-6 max-w-4xl mx-auto">
         {courses.length === 0 ? (
           <div className="text-center py-12">
             <BookOpen size={48} className="mx-auto mb-4 text-muted-foreground"/>

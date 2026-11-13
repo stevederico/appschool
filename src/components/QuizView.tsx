@@ -135,7 +135,7 @@ export default function QuizView() {
   // Show results
   if (result) {
     return (
-      <div className="p-6 max-w-2xl mx-auto">
+      <div className="w-full p-4 sm:p-6 max-w-2xl mx-auto">
           <div className={`text-center p-8 rounded-xl mb-6 ${result.passed ? 'bg-green-500/20' : 'bg-red-500/20'}`}>
             {result.passed ? (
               <CheckCircle size={64} className="mx-auto mb-4 text-green-400" />
@@ -215,7 +215,7 @@ export default function QuizView() {
   const totalQuestions = quiz.questions?.length || 0;
 
   return (
-    <div className="p-6 max-w-2xl mx-auto">
+    <div className="w-full p-4 sm:p-6 max-w-2xl mx-auto">
         {/* Questions */}
         <div className="space-y-8">
           {quiz.questions?.map((q, idx) => (

@@ -128,15 +128,15 @@ function ChecklistItem({ item, type, courseSlug, completed, quiz, voiceSpeed, is
       }`}
     >
       <div
-        className={`w-6 h-6 rounded-full flex items-center justify-center ${
+        className={`w-6 h-6 shrink-0 rounded-full flex items-center justify-center ${
           completed ? 'bg-green-500 text-white' : 'bg-background border-2 border-accent'
         }`}
       >
         {completed && <Check size={14}/>}
       </div>
-      <ItemIcon size={16} className="text-muted-foreground" />
-      <span className={completed ? 'line-through opacity-60' : ''}>{item.title}</span>
-      <div className="ml-auto flex items-center gap-2">
+      <ItemIcon size={16} className="shrink-0 text-muted-foreground" />
+      <span className={`min-w-0 ${completed ? 'line-through opacity-60' : ''}`}>{item.title}</span>
+      <div className="ml-auto shrink-0 flex items-center gap-2">
         {quiz && quiz.bestScore !== null && (
           <span className={`text-xs px-2 py-0.5 rounded ${
             quiz.passed ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'
@@ -150,7 +150,7 @@ function ChecklistItem({ item, type, courseSlug, completed, quiz, voiceSpeed, is
           </span>
         )}
         {item.category && (
-          <span className="text-xs text-muted-foreground bg-background px-2 py-0.5 rounded">
+          <span className="hidden sm:inline text-xs text-muted-foreground bg-background px-2 py-0.5 rounded">
             {item.category}
           </span>
         )}
@@ -187,7 +187,7 @@ function RepItem({ item, courseSlug, isEnrolled }: RepItemProps) {
         }`}
       >
         <div
-          className={`w-6 h-6 rounded-full flex items-center justify-center ${
+          className={`w-6 h-6 shrink-0 rounded-full flex items-center justify-center ${
             item.completed ? 'bg-green-500 text-white' : 'bg-background border-2 border-accent'
           }`}
           onClick={handleClick}
@@ -195,11 +195,11 @@ function RepItem({ item, courseSlug, isEnrolled }: RepItemProps) {
           {item.completed && <Check size={14}/>}
         </div>
         <div
-          className="flex-1 flex items-center gap-2"
+          className="flex-1 min-w-0 flex items-center gap-2"
           onClick={handleClick}
         >
-          <Code size={16} className="text-muted-foreground"/>
-          <span className={item.completed ? 'line-through opacity-60' : ''}>{item.title}</span>
+          <Code size={16} className="shrink-0 text-muted-foreground"/>
+          <span className={`min-w-0 ${item.completed ? 'line-through opacity-60' : ''}`}>{item.title}</span>
         </div>
         <div className="flex items-center gap-2">
           {item.hasUnderTarget && (
