@@ -22,17 +22,8 @@
     <meta name="twitter:description" content="{{TAGLINE}}">
     <meta name="twitter:image" content="/icons/icon.png">
 
-    <!-- Brutalist theme + anti-FOUC. Dark is default unless localStorage says light. -->
-    <script>
-      (function() {
-        document.documentElement.classList.add('theme-brutalist');
-        const savedTheme = localStorage.getItem('theme');
-        const isDark = savedTheme ? savedTheme === 'dark' : true;
-        if (isDark) {
-          document.documentElement.classList.add('dark');
-        }
-      })();
-    </script>
+    <!-- Brutalist theme + anti-FOUC. External so CSP script-src 'self' allows it; classic and synchronous so it runs before paint. -->
+    <script src="/theme-init.js"></script>
 
     <style>
       body { background: oklch(0.985 0 0); }

@@ -1,3 +1,9 @@
+0.41.7
+
+  Load theme script from file
+  Add brutalist class in theme-init
+  Honor system theme setting
+
 0.41.6
 
   Return progress checklist and stats
