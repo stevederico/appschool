@@ -1,3 +1,12 @@
+0.41.6
+
+  Return progress checklist and stats
+  Add wordCount and hasQuiz to guides
+  Return bookmark titles and content
+  Bundle Monaco, drop CDN load
+  Load lessons without a checklist
+  Hide Take Quiz without a quiz
+
 0.41.5
 
   Return isEnrolled on courses

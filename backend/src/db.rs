@@ -961,10 +961,14 @@ const APPSCHOOL_SCHEMA: &[&str] = &[
       courseSlug TEXT NOT NULL,
       guideSlug TEXT NOT NULL,
       sectionTitle TEXT NOT NULL,
+      sectionContent TEXT,
       bookmarkedAt TEXT NOT NULL,
       FOREIGN KEY (userId) REFERENCES Users(_id)
     )",
 ];
+
+/// Columns an older `Bookmarks` table may be missing.
+const BOOKMARKS_COLUMNS: &[(&str, &str)] = &[("sectionContent", "TEXT")];
 
 const APPSCHOOL_INDEXES: &[&str] = &[
     "CREATE UNIQUE INDEX IF NOT EXISTS idx_courses_slug ON Courses(slug)",
@@ -1017,6 +1021,7 @@ fn ensure_schema(db: &Db) -> Result<(), DbError> {
     for statement in APPSCHOOL_SCHEMA {
         db.exec(statement)?;
     }
+    add_missing_columns(db, "Bookmarks", BOOKMARKS_COLUMNS)?;
     for statement in APPSCHOOL_INDEXES {
         db.exec(statement)?;
     }
@@ -1915,6 +1920,42 @@ mod tests {
         let pool = Pool::open(&tmp.path(), 1).expect("pool opens");
         pool.close_all();
         assert!(std::path::Path::new(&tmp.path()).exists());
+    }
+
+    #[test]
+    fn migrates_stale_bookmarks_table() {
+        let tmp = TempDb::new("stale-bookmarks");
+        let path = tmp.path();
+        std::fs::create_dir_all(std::path::Path::new(&path).parent().expect("has parent"))
+            .expect("dir created");
+
+        // A Bookmarks table from before `sectionContent`, holding one row.
+        {
+            let db = Db::open(&path).expect("raw open");
+            db.exec(
+                "CREATE TABLE Bookmarks (
+                    _id TEXT PRIMARY KEY,
+                    userId TEXT NOT NULL,
+                    courseSlug TEXT NOT NULL,
+                    guideSlug TEXT NOT NULL,
+                    sectionTitle TEXT NOT NULL,
+                    bookmarkedAt TEXT NOT NULL
+                )",
+            )
+            .expect("stale table created");
+            db.exec(
+                "INSERT INTO Bookmarks VALUES ('b1', 'u1', 'js', 'closures', 'Intro', '2026-01-01')",
+            )
+            .expect("legacy row inserted");
+        }
+
+        let pool = Pool::open(&path, 1).expect("pool opens");
+        let rows = pool
+            .with(|db| db.query("SELECT sectionTitle, sectionContent FROM Bookmarks", &[]))
+            .expect("new column is queryable");
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].text("sectionTitle"), Some("Intro"));
+        assert_eq!(rows[0].text("sectionContent"), None);
     }
 
     #[test]

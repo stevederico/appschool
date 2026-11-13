@@ -14,6 +14,8 @@ interface Guide {
   content?: string;
   wordCount?: number;
   category?: string;
+  /** False when the guide has no quiz; absent on older backends. */
+  hasQuiz?: boolean;
 }
 
 /** Minimal course shape used for the guide header. */
@@ -245,6 +247,8 @@ export default function GuideView() {
     );
   }
 
+  const hasQuiz = guide.hasQuiz !== false;
+
   if (viewMode === 'slide' && slides.length > 0) {
     return (
       <>
@@ -265,9 +269,10 @@ export default function GuideView() {
           skipCode={skipCode}
           setSkipCode={setSkipCode}
           onExit={() => setViewMode('reading')}
+          hasQuiz={hasQuiz}
           onTakeQuiz={async () => {
             await handleComplete();
-            navigate(`/app/courses/${slug}/quizzes/${guideSlug}`);
+            navigate(hasQuiz ? `/app/courses/${slug}/quizzes/${guideSlug}` : `/app/courses/${slug}`);
           }}
           guideTitle={guide.title}
           bookmarkedSections={bookmarkedSections}
@@ -341,13 +346,22 @@ export default function GuideView() {
             )}
           </button>
 
-          <button
-            onClick={handleTakeQuiz}
-            className="px-6 py-3 bg-app text-white rounded-lg font-medium hover:opacity-90 transition-all flex items-center gap-2 cursor-pointer"
-          >
-            <HelpCircle size={20}/>
-            Take Quiz
-          </button>
+          {hasQuiz ? (
+            <button
+              onClick={handleTakeQuiz}
+              className="px-6 py-3 bg-app text-white rounded-lg font-medium hover:opacity-90 transition-all flex items-center gap-2 cursor-pointer"
+            >
+              <HelpCircle size={20}/>
+              Take Quiz
+            </button>
+          ) : (
+            <button
+              onClick={() => navigate(`/app/courses/${slug}`)}
+              className="px-6 py-3 bg-app text-white rounded-lg font-medium hover:opacity-90 transition-all cursor-pointer"
+            >
+              Back to Course
+            </button>
+          )}
         </div>
       </div>
     </>

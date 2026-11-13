@@ -1542,7 +1542,17 @@ fn guide_json(row: &db::Row) -> Json {
             m.insert("content".into(), json::s(body));
         }
     }
+    let words = m
+        .get("content")
+        .and_then(Json::as_str)
+        .map_or(0, word_count);
+    m.insert("wordCount".into(), json::i(words));
     Json::Obj(m)
+}
+
+/// Whitespace-separated word count of a guide body, for reading-time estimates.
+fn word_count(text: &str) -> i64 {
+    i64::try_from(text.split_whitespace().count()).unwrap_or(i64::MAX)
 }
 
 fn quiz_row_json(row: &db::Row) -> Json {
@@ -1821,9 +1831,24 @@ fn guide_get(state: &AppState, slug: &str, guide_slug: &str) -> Response {
     match query_one(
         state,
         "SELECT * FROM Guides WHERE courseId = ? AND slug = ? AND published = 1",
-        &[t(id), t(guide_slug)],
+        &[t(&id), t(guide_slug)],
     ) {
-        Ok(Some(row)) => json_res(200, &guide_json(&row)),
+        Ok(Some(row)) => {
+            // A quiz belongs to the guide that shares its slug.
+            let has_quiz = match query_one(
+                state,
+                "SELECT _id FROM Quizzes WHERE courseId = ? AND slug = ? AND published = 1",
+                &[t(&id), t(guide_slug)],
+            ) {
+                Ok(quiz) => quiz.is_some(),
+                Err(r) => return r,
+            };
+            let mut guide = guide_json(&row);
+            if let Json::Obj(m) = &mut guide {
+                m.insert("hasQuiz".into(), Json::Bool(has_quiz));
+            }
+            json_res(200, &guide)
+        }
         Ok(None) => err_json(404, "Guide not found"),
         Err(r) => r,
     }
@@ -2559,6 +2584,197 @@ fn empty_progress() -> Json {
     ])
 }
 
+/// The array stored under `key`, or an empty slice when it is absent.
+fn arr_field<'a>(value: &'a Json, key: &str) -> &'a [Json] {
+    value.get(key).and_then(Json::as_arr).unwrap_or(&[])
+}
+
+/// A copy of `src` holding only `keys`; a missing key becomes `null`.
+fn pick(src: &Json, keys: &[&str]) -> BTreeMap<String, Json> {
+    keys.iter()
+        .map(|k| ((*k).to_string(), src.get(k).cloned().unwrap_or(Json::Null)))
+        .collect()
+}
+
+fn is_true(value: &Json, key: &str) -> bool {
+    value.get(key).and_then(Json::as_bool) == Some(true)
+}
+
+fn count_completed(items: &[Json]) -> i64 {
+    items
+        .iter()
+        .filter(|item| is_true(item, "completed"))
+        .count() as i64
+}
+
+/// The lesson checklist and aggregate stats for one course, merged with a
+/// user's stored progress.
+///
+/// This is what the course page renders its lesson list from, so it lists
+/// every published guide, quiz and rep whether or not the user has started.
+/// `progress` is a parsed `UserProgress` row, or `null` for a user with none.
+///
+/// A quiz counts as completed once any attempt passed. A rep counts as
+/// completed once any attempt both matched the solution and beat the target.
+///
+/// # Errors
+/// A 500 [`Response`] when a content query fails.
+fn course_checklist(
+    state: &AppState,
+    course_id: &str,
+    progress: &Json,
+) -> Result<(Json, Json), Response> {
+    let guide_rows = query_all(
+        state,
+        "SELECT * FROM Guides WHERE courseId = ? AND published = 1 ORDER BY order_index ASC",
+        &[t(course_id)],
+    )?;
+    let quiz_rows = query_all(
+        state,
+        "SELECT _id, slug, title, guideSlug, passingScore, order_index FROM Quizzes
+          WHERE courseId = ? AND published = 1 ORDER BY order_index ASC",
+        &[t(course_id)],
+    )?;
+    let rep_rows = query_all(
+        state,
+        "SELECT _id, slug, title, category, priority, targetMinutes, order_index FROM Reps
+          WHERE courseId = ? AND published = 1 ORDER BY category ASC, order_index ASC",
+        &[t(course_id)],
+    )?;
+
+    let completed_guides = arr_field(progress, "completedGuides");
+    let quiz_slugs: BTreeSet<&str> = quiz_rows.iter().filter_map(|q| q.text("slug")).collect();
+    let guides: Vec<Json> = guide_rows
+        .iter()
+        .map(|row| {
+            let full = guide_json(row);
+            let mut m = pick(
+                &full,
+                &[
+                    "_id",
+                    "slug",
+                    "title",
+                    "category",
+                    "estimatedMinutes",
+                    "order",
+                    "wordCount",
+                ],
+            );
+            let id = row.text("_id").unwrap_or("");
+            let done = completed_guides
+                .iter()
+                .find(|g| g.get_str("guideId") == Some(id));
+            let has_quiz = row.text("slug").is_some_and(|s| quiz_slugs.contains(s));
+            m.insert("completed".into(), Json::Bool(done.is_some()));
+            m.insert(
+                "completedAt".into(),
+                done.and_then(|g| g.get("completedAt").cloned())
+                    .unwrap_or(Json::Null),
+            );
+            m.insert("hasQuiz".into(), Json::Bool(has_quiz));
+            Json::Obj(m)
+        })
+        .collect();
+
+    let quiz_attempts = arr_field(progress, "quizAttempts");
+    let quizzes: Vec<Json> = quiz_rows
+        .iter()
+        .map(|row| {
+            let mut m = row_map(row);
+            if let Some(order) = m.remove("order_index") {
+                m.insert("order".into(), order);
+            }
+            if m.get("guideSlug").and_then(Json::as_str).is_none() {
+                let slug = m.get("slug").cloned().unwrap_or(Json::Null);
+                m.insert("guideSlug".into(), slug);
+            }
+            let id = row.text("_id").unwrap_or("");
+            let mine: Vec<&Json> = quiz_attempts
+                .iter()
+                .filter(|a| a.get_str("quizId") == Some(id))
+                .collect();
+            let passed = mine.iter().find(|a| is_true(a, "passed"));
+            let best = mine.iter().filter_map(|a| a.get_i64("score")).max();
+            m.insert("attemptCount".into(), json::i(mine.len() as i64));
+            m.insert("bestScore".into(), best.map_or(Json::Null, json::i));
+            m.insert("passed".into(), Json::Bool(passed.is_some()));
+            m.insert("completed".into(), Json::Bool(passed.is_some()));
+            m.insert(
+                "completedAt".into(),
+                passed
+                    .and_then(|a| a.get("attemptedAt").cloned())
+                    .unwrap_or(Json::Null),
+            );
+            Json::Obj(m)
+        })
+        .collect();
+
+    let rep_attempts = arr_field(progress, "repAttempts");
+    let reps: Vec<Json> = rep_rows
+        .iter()
+        .map(|row| {
+            let mut m = row_map(row);
+            if let Some(order) = m.remove("order_index") {
+                m.insert("order".into(), order);
+            }
+            let id = row.text("_id").unwrap_or("");
+            let mine: Vec<&Json> = rep_attempts
+                .iter()
+                .filter(|a| a.get_str("repId") == Some(id))
+                .collect();
+            let passed = mine
+                .iter()
+                .find(|a| is_true(a, "codeMatch") && is_true(a, "underTarget"));
+            let under_target = mine.iter().any(|a| is_true(a, "underTarget"));
+            m.insert("attemptCount".into(), json::i(mine.len() as i64));
+            m.insert("hasUnderTarget".into(), Json::Bool(under_target));
+            m.insert("completed".into(), Json::Bool(passed.is_some()));
+            m.insert(
+                "completedAt".into(),
+                passed
+                    .and_then(|a| a.get("completedAt").cloned())
+                    .unwrap_or(Json::Null),
+            );
+            m.insert(
+                "attempts".into(),
+                Json::Arr(mine.into_iter().cloned().collect()),
+            );
+            Json::Obj(m)
+        })
+        .collect();
+
+    let done = [
+        count_completed(&guides),
+        count_completed(&quizzes),
+        count_completed(&reps),
+    ];
+    let total = (guides.len() + quizzes.len() + reps.len()) as i64;
+    let percent = if total == 0 {
+        0
+    } else {
+        ((done.iter().sum::<i64>() as f64) / (total as f64) * 100.0).round() as i64
+    };
+    let stats = json::obj([
+        ("percentComplete", json::i(percent)),
+        ("totalGuides", json::i(guides.len() as i64)),
+        ("completedGuides", json::i(done[0])),
+        ("totalQuizzes", json::i(quizzes.len() as i64)),
+        ("completedQuizzes", json::i(done[1])),
+        ("totalReps", json::i(reps.len() as i64)),
+        ("completedReps", json::i(done[2])),
+        (
+            "totalTimeSpentMinutes",
+            json::i(progress.get_i64("totalTimeSpentMinutes").unwrap_or(0)),
+        ),
+    ]);
+    let checklist = json::obj([
+        ("guides", Json::Arr(guides)),
+        ("quizzes", Json::Arr(quizzes)),
+        ("reps", Json::Arr(reps)),
+    ]);
+    Ok((checklist, stats))
+}
+
 fn progress_get(state: &AppState, req: &Request, path: &str) -> Response {
     let user_id = match require_auth(state, req) {
         Ok(id) => id,
@@ -2573,16 +2789,39 @@ fn progress_get(state: &AppState, req: &Request, path: &str) -> Response {
         Ok(id) => id,
         Err(r) => return r,
     };
-    match query_one(
+    let progress = match query_one(
         state,
         "SELECT * FROM UserProgress WHERE userId = ? AND courseId = ?",
         &[t(&user_id), t(&course_id_s)],
     ) {
-        Ok(Some(row)) => json_res(200, &detailed_progress(&progress_row_json(&row))),
-        Ok(None) => json_res(200, &empty_progress()),
-        Err(r) => r,
+        Ok(Some(row)) => progress_row_json(&row),
+        Ok(None) => Json::Null,
+        Err(r) => return r,
+    };
+    let (checklist, stats) = match course_checklist(state, &course_id_s, &progress) {
+        Ok(v) => v,
+        Err(r) => return r,
+    };
+    // The flat fields stay for compatibility; the front end reads `checklist`,
+    // `stats` and `detailed`.
+    let mut body = match progress {
+        Json::Null => empty_progress(),
+        ref stored => detailed_progress(stored),
+    };
+    if let Json::Obj(m) = &mut body {
+        let attempts = m
+            .get("quizAttempts")
+            .cloned()
+            .unwrap_or(Json::Arr(Vec::new()));
+        m.insert("detailed".into(), json::obj([("quizAttempts", attempts)]));
+        m.insert("checklist".into(), checklist);
+        m.insert("stats".into(), stats);
     }
+    json_res(200, &body)
 }
+
+/// Longest bookmarked section excerpt kept, in characters.
+const BOOKMARK_CONTENT_MAX_CHARS: usize = 2000;
 
 fn bookmarks_list(state: &AppState, req: &Request) -> Response {
     let user_id = match require_auth(state, req) {
@@ -2591,7 +2830,11 @@ fn bookmarks_list(state: &AppState, req: &Request) -> Response {
     };
     match query_all(
         state,
-        "SELECT * FROM Bookmarks WHERE userId = ? ORDER BY bookmarkedAt DESC",
+        "SELECT b.*, c.title AS courseTitle, g.title AS guideTitle
+           FROM Bookmarks b
+           LEFT JOIN Courses c ON c.slug = b.courseSlug
+           LEFT JOIN Guides g ON g.courseId = c._id AND g.slug = b.guideSlug
+          WHERE b.userId = ? ORDER BY b.bookmarkedAt DESC",
         &[t(&user_id)],
     ) {
         Ok(rows) => json_res(200, &Json::Arr(rows.iter().map(bookmark_json).collect())),
@@ -2652,6 +2895,12 @@ fn guide_bookmarks_post(state: &AppState, req: &Request, slug: &str, guide_slug:
         Err(r) => return r,
     };
     let section = body.get_str("sectionTitle").unwrap_or("").to_string();
+    let content: String = body
+        .get_str("sectionContent")
+        .unwrap_or("")
+        .chars()
+        .take(BOOKMARK_CONTENT_MAX_CHARS)
+        .collect();
     let id = match generate_uuid() {
         Ok(v) => v,
         Err(r) => return r,
@@ -2660,14 +2909,15 @@ fn guide_bookmarks_post(state: &AppState, req: &Request, slug: &str, guide_slug:
     if let Err(r) = run_sql(
         state,
         "INSERT INTO Bookmarks
-           (_id, userId, courseSlug, guideSlug, sectionTitle, bookmarkedAt)
-         VALUES (?, ?, ?, ?, ?, ?)",
+           (_id, userId, courseSlug, guideSlug, sectionTitle, sectionContent, bookmarkedAt)
+         VALUES (?, ?, ?, ?, ?, ?, ?)",
         &[
             t(&id),
             t(&user_id),
             t(slug),
             t(guide_slug),
             t(&section),
+            t(&content),
             t(&now),
         ],
     ) {
@@ -2681,6 +2931,7 @@ fn guide_bookmarks_post(state: &AppState, req: &Request, slug: &str, guide_slug:
             ("courseSlug", json::s(slug)),
             ("guideSlug", json::s(guide_slug)),
             ("sectionTitle", json::s(section)),
+            ("sectionContent", json::s(content)),
             ("bookmarkedAt", json::s(now)),
         ]),
     )
@@ -4138,6 +4389,374 @@ mod tests {
         replay_cookies(&mut list, &[&a], true);
         let listed = json_body(&handle(&state, list));
         assert_eq!(listed.as_arr().map(|x| x.len()), Some(1));
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    fn insert_quiz(state: &AppState, course_id: &str, slug: &str, title: &str) -> String {
+        let id = crate::crypto::random_uuid_v4().expect("uuid");
+        let now = iso_now();
+        let questions = r#"[{"id":"q1","question":"Pick b","correctAnswer":"b","options":[{"id":"a","text":"A"},{"id":"b","text":"B"}]}]"#;
+        state
+            .pool
+            .with(|d| {
+                d.run(
+                    "INSERT INTO Quizzes
+                       (_id, courseId, slug, title, guideSlug, passingScore, totalPoints,
+                        order_index, published, questions, createdAt, updatedAt)
+                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    &[
+                        t(&id),
+                        t(course_id),
+                        t(slug),
+                        t(title),
+                        t(slug),
+                        db::Value::Int(70),
+                        db::Value::Int(1),
+                        db::Value::Int(1),
+                        db::Value::Int(1),
+                        t(questions),
+                        t(&now),
+                        t(&now),
+                    ],
+                )
+            })
+            .expect("insert quiz");
+        id
+    }
+
+    fn insert_rep(state: &AppState, course_id: &str, slug: &str, title: &str) {
+        let id = crate::crypto::random_uuid_v4().expect("uuid");
+        let now = iso_now();
+        state
+            .pool
+            .with(|d| {
+                d.run(
+                    "INSERT INTO Reps
+                       (_id, courseId, slug, title, category, priority, prompt, targetMinutes,
+                        order_index, published, createdAt, updatedAt)
+                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    &[
+                        t(&id),
+                        t(course_id),
+                        t(slug),
+                        t(title),
+                        t("js"),
+                        t("high"),
+                        t("Write it"),
+                        db::Value::Int(10),
+                        db::Value::Int(1),
+                        db::Value::Int(1),
+                        t(&now),
+                        t(&now),
+                    ],
+                )
+            })
+            .expect("insert rep");
+    }
+
+    /// A course with two guides (only `closures` has a quiz) and one rep.
+    fn seed_course(state: &AppState) {
+        let cid = insert_course(state, "js", "JavaScript");
+        insert_guide(
+            state,
+            &cid,
+            "closures",
+            "Closures",
+            "# Closures\n\nthree more words",
+        );
+        insert_guide(state, &cid, "scope", "Scope", "# Scope");
+        insert_quiz(state, &cid, "closures", "Closures Quiz");
+        insert_rep(state, &cid, "debounce", "Debounce");
+    }
+
+    fn get_as(state: &AppState, path: &str, who: &Response) -> Response {
+        let mut req = Request::for_test("GET", path);
+        replay_cookies(&mut req, &[who], false);
+        handle(state, req)
+    }
+
+    fn post_as(state: &AppState, path: &str, who: &Response, body: &str) -> Response {
+        let mut req = Request::for_test("POST", path);
+        replay_cookies(&mut req, &[who], true);
+        req.set_test_body(body.as_bytes().to_vec());
+        let res = handle(state, req);
+        assert_eq!(
+            res.status,
+            200,
+            "{path}: {}",
+            String::from_utf8_lossy(&res.body)
+        );
+        res
+    }
+
+    /// Entry `slug` of `checklist.<kind>` in a progress body.
+    fn checklist_item(body: &Json, kind: &str, slug: &str) -> Json {
+        body.get("checklist")
+            .and_then(|c| c.get(kind))
+            .and_then(Json::as_arr)
+            .and_then(|items| items.iter().find(|i| i.get_str("slug") == Some(slug)))
+            .cloned()
+            .unwrap_or_else(|| panic!("no {kind} entry {slug}"))
+    }
+
+    fn stat(body: &Json, key: &str) -> Option<i64> {
+        body.get("stats").and_then(|s| s.get_i64(key))
+    }
+
+    #[test]
+    fn anonymous_gets_lessons_but_no_progress() {
+        let (state, dir) = test_state();
+        seed_course(&state);
+        let res = handle(&state, Request::for_test("GET", "/api/progress/js"));
+        assert_eq!(res.status, 401);
+
+        // The public lists the logged-out course page falls back to.
+        let res = handle(&state, Request::for_test("GET", "/api/courses/js/guides"));
+        assert_eq!(res.status, 200);
+        let guides = json_body(&res);
+        let guides = guides.as_arr().expect("guides array");
+        assert_eq!(guides.len(), 2);
+        assert_eq!(guides[0].get_str("slug"), Some("closures"));
+        assert_eq!(guides[0].get_i64("wordCount"), Some(5));
+        let res = handle(&state, Request::for_test("GET", "/api/courses/js/reps"));
+        assert_eq!(json_body(&res).as_arr().map(|a| a.len()), Some(1));
+
+        let res = handle(
+            &state,
+            Request::for_test("GET", "/api/courses/js/guides/closures"),
+        );
+        assert_eq!(json_body(&res).get("hasQuiz"), Some(&Json::Bool(true)));
+        let res = handle(
+            &state,
+            Request::for_test("GET", "/api/courses/js/guides/scope"),
+        );
+        let scope = json_body(&res);
+        assert_eq!(scope.get("hasQuiz"), Some(&Json::Bool(false)));
+        assert_eq!(scope.get_i64("wordCount"), Some(2));
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn progress_lists_every_lesson_before_any_progress() {
+        let (state, dir) = test_state();
+        seed_course(&state);
+        let user = signed_up(&state, "fresh@example.com");
+        // Signed in but not enrolled: the checklist is there all the same.
+        let before = json_body(&get_as(&state, "/api/progress/js", &user));
+        assert_eq!(
+            checklist_item(&before, "guides", "closures").get_str("title"),
+            Some("Closures")
+        );
+
+        post_as(&state, "/api/courses/js/enroll", &user, "{}");
+        let res = get_as(&state, "/api/progress/js", &user);
+        assert_eq!(res.status, 200);
+        let body = json_body(&res);
+
+        let guide = checklist_item(&body, "guides", "closures");
+        assert_eq!(guide.get("completed"), Some(&Json::Bool(false)));
+        assert_eq!(guide.get("completedAt"), Some(&Json::Null));
+        assert_eq!(guide.get("hasQuiz"), Some(&Json::Bool(true)));
+        assert_eq!(guide.get_i64("wordCount"), Some(5));
+        assert!(guide.get_str("_id").is_some());
+        assert!(
+            guide.get("content").is_none(),
+            "checklist must not carry guide bodies"
+        );
+        let scope = checklist_item(&body, "guides", "scope");
+        assert_eq!(scope.get("hasQuiz"), Some(&Json::Bool(false)));
+
+        let quiz = checklist_item(&body, "quizzes", "closures");
+        assert_eq!(quiz.get_str("guideSlug"), Some("closures"));
+        assert_eq!(quiz.get("bestScore"), Some(&Json::Null));
+        assert_eq!(quiz.get("passed"), Some(&Json::Bool(false)));
+        assert_eq!(quiz.get_i64("attemptCount"), Some(0));
+        assert!(
+            quiz.get("questions").is_none(),
+            "checklist must not carry quiz answers"
+        );
+
+        let rep = checklist_item(&body, "reps", "debounce");
+        assert_eq!(rep.get("completed"), Some(&Json::Bool(false)));
+        assert_eq!(rep.get_str("priority"), Some("high"));
+        assert_eq!(rep.get_i64("targetMinutes"), Some(10));
+        assert_eq!(
+            rep.get("attempts").and_then(Json::as_arr).map(|a| a.len()),
+            Some(0)
+        );
+
+        assert_eq!(stat(&body, "percentComplete"), Some(0));
+        assert_eq!(stat(&body, "totalGuides"), Some(2));
+        assert_eq!(stat(&body, "completedGuides"), Some(0));
+        assert_eq!(stat(&body, "totalQuizzes"), Some(1));
+        assert_eq!(stat(&body, "totalReps"), Some(1));
+
+        // The flat fields older clients read are still there.
+        assert_eq!(
+            body.get("completedGuideIds")
+                .and_then(Json::as_arr)
+                .map(|a| a.len()),
+            Some(0)
+        );
+        assert_eq!(
+            body.get("passedQuizIds")
+                .and_then(Json::as_arr)
+                .map(|a| a.len()),
+            Some(0)
+        );
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn progress_reflects_guide_quiz_and_rep_activity() {
+        let (state, dir) = test_state();
+        seed_course(&state);
+        let user = signed_up(&state, "busy@example.com");
+        let other = signed_up(&state, "idle@example.com");
+        post_as(&state, "/api/courses/js/enroll", &user, "{}");
+
+        post_as(
+            &state,
+            "/api/courses/js/guides/closures/complete",
+            &user,
+            "{}",
+        );
+        let wrong = r#"{"answers":[{"questionId":"q1","answer":"a"}],"timeSpentSeconds":3}"#;
+        let right = r#"{"answers":[{"questionId":"q1","answer":"b"}],"timeSpentSeconds":3}"#;
+        let failed = post_as(
+            &state,
+            "/api/courses/js/quizzes/closures/submit",
+            &user,
+            wrong,
+        );
+        assert_eq!(json_body(&failed).get("passed"), Some(&Json::Bool(false)));
+
+        let body = json_body(&get_as(&state, "/api/progress/js", &user));
+        let quiz = checklist_item(&body, "quizzes", "closures");
+        assert_eq!(quiz.get_i64("bestScore"), Some(0));
+        assert_eq!(quiz.get("passed"), Some(&Json::Bool(false)));
+        assert_eq!(stat(&body, "completedQuizzes"), Some(0));
+
+        let passed = post_as(
+            &state,
+            "/api/courses/js/quizzes/closures/submit",
+            &user,
+            right,
+        );
+        assert_eq!(json_body(&passed).get("passed"), Some(&Json::Bool(true)));
+        // A slow attempt with matching code does not complete the rep; a fast one does.
+        let slow = r#"{"actualMinutes":30,"codeMatch":true}"#;
+        post_as(
+            &state,
+            "/api/courses/js/reps/debounce/complete",
+            &user,
+            slow,
+        );
+        let body = json_body(&get_as(&state, "/api/progress/js", &user));
+        assert_eq!(
+            checklist_item(&body, "reps", "debounce").get("completed"),
+            Some(&Json::Bool(false))
+        );
+        let fast = r#"{"actualMinutes":4,"codeMatch":true}"#;
+        post_as(
+            &state,
+            "/api/courses/js/reps/debounce/complete",
+            &user,
+            fast,
+        );
+
+        let body = json_body(&get_as(&state, "/api/progress/js", &user));
+        let guide = checklist_item(&body, "guides", "closures");
+        assert_eq!(guide.get("completed"), Some(&Json::Bool(true)));
+        assert!(guide.get_str("completedAt").is_some());
+        assert_eq!(
+            checklist_item(&body, "guides", "scope").get("completed"),
+            Some(&Json::Bool(false))
+        );
+
+        let quiz = checklist_item(&body, "quizzes", "closures");
+        assert_eq!(quiz.get_i64("bestScore"), Some(100));
+        assert_eq!(quiz.get("passed"), Some(&Json::Bool(true)));
+        assert_eq!(quiz.get("completed"), Some(&Json::Bool(true)));
+        assert_eq!(quiz.get_i64("attemptCount"), Some(2));
+        assert!(quiz.get_str("completedAt").is_some());
+
+        let rep = checklist_item(&body, "reps", "debounce");
+        assert_eq!(rep.get("completed"), Some(&Json::Bool(true)));
+        assert_eq!(rep.get("hasUnderTarget"), Some(&Json::Bool(true)));
+        assert_eq!(rep.get_i64("attemptCount"), Some(2));
+        let attempts = rep
+            .get("attempts")
+            .and_then(Json::as_arr)
+            .expect("attempts");
+        assert_eq!(attempts[0].get("underTarget"), Some(&Json::Bool(false)));
+        assert_eq!(attempts[1].get_i64("actualMinutes"), Some(4));
+
+        // 1 of 2 guides, 1 of 1 quizzes, 1 of 1 reps: 3 of 4.
+        assert_eq!(stat(&body, "completedGuides"), Some(1));
+        assert_eq!(stat(&body, "completedQuizzes"), Some(1));
+        assert_eq!(stat(&body, "completedReps"), Some(1));
+        assert_eq!(stat(&body, "percentComplete"), Some(75));
+        assert_eq!(stat(&body, "totalTimeSpentMinutes"), Some(34));
+        let detailed = body.get("detailed").and_then(|d| d.get("quizAttempts"));
+        assert_eq!(detailed.and_then(Json::as_arr).map(|a| a.len()), Some(2));
+        assert_eq!(
+            body.get("completedGuideIds")
+                .and_then(Json::as_arr)
+                .map(|a| a.len()),
+            Some(1)
+        );
+
+        // Another user's checklist is untouched.
+        let idle = json_body(&get_as(&state, "/api/progress/js", &other));
+        assert_eq!(
+            checklist_item(&idle, "guides", "closures").get("completed"),
+            Some(&Json::Bool(false))
+        );
+        assert_eq!(stat(&idle, "percentComplete"), Some(0));
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn bookmarks_list_carries_titles_and_section_content() {
+        let (state, dir) = test_state();
+        seed_course(&state);
+        let user = signed_up(&state, "marks@example.com");
+        let long = "x".repeat(BOOKMARK_CONTENT_MAX_CHARS + 50);
+        let body = format!(r#"{{"sectionTitle":"Intro","sectionContent":"{long}"}}"#);
+        post_as(
+            &state,
+            "/api/courses/js/guides/closures/bookmarks",
+            &user,
+            &body,
+        );
+        post_as(
+            &state,
+            "/api/courses/gone/guides/missing/bookmarks",
+            &user,
+            r#"{"sectionTitle":"Old"}"#,
+        );
+
+        let list = json_body(&get_as(&state, "/api/bookmarks", &user));
+        let list = list.as_arr().expect("bookmarks array");
+        assert_eq!(list.len(), 2);
+        let intro = list
+            .iter()
+            .find(|b| b.get_str("sectionTitle") == Some("Intro"))
+            .expect("intro");
+        assert_eq!(intro.get_str("courseTitle"), Some("JavaScript"));
+        assert_eq!(intro.get_str("guideTitle"), Some("Closures"));
+        assert_eq!(
+            intro.get_str("sectionContent").map(|c| c.chars().count()),
+            Some(BOOKMARK_CONTENT_MAX_CHARS)
+        );
+        // A bookmark whose course is gone still lists; the front end falls back to slugs.
+        let old = list
+            .iter()
+            .find(|b| b.get_str("sectionTitle") == Some("Old"))
+            .expect("old");
+        assert_eq!(old.get("courseTitle"), Some(&Json::Null));
+        assert_eq!(old.get_str("courseSlug"), Some("gone"));
         std::fs::remove_dir_all(&dir).ok();
     }
 

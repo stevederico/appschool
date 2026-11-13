@@ -383,6 +383,12 @@ export default function ProgressChecklist({ courseSlug, checklist, stats, isEnro
         </div>
       )}
 
+      {guides.length === 0 && reps.length === 0 && (
+        <div className="bg-accent rounded-xl p-6 text-center text-muted-foreground">
+          No lessons in this course yet.
+        </div>
+      )}
+
       {/* Guides Section */}
       {guides.length > 0 && (
         <div>
@@ -396,7 +402,7 @@ export default function ProgressChecklist({ courseSlug, checklist, stats, isEnro
           <div className="space-y-2">
             {guides.map(item => (
               <ChecklistItem
-                key={item._id}
+                key={item._id ?? item.slug}
                 item={item}
                 type="guide"
                 courseSlug={courseSlug}
@@ -425,7 +431,7 @@ export default function ProgressChecklist({ courseSlug, checklist, stats, isEnro
           </h3>
           <div className="space-y-2">
             {reps.map(item => (
-              <RepItem key={item._id} item={item} courseSlug={courseSlug} isEnrolled={isEnrolled} />
+              <RepItem key={item._id ?? item.slug} item={item} courseSlug={courseSlug} isEnrolled={isEnrolled} />
             ))}
           </div>
         </div>

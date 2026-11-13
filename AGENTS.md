@@ -72,7 +72,9 @@ GET /api/courses/:slug/guides/:guideSlug
 POST /api/courses/:slug/quizzes/:quizSlug/submit
 Body: { answers: [{ questionId, answer }], timeSpentSeconds }
 
-// Progress checklist includes: slug, title, estimatedMinutes/targetMinutes
+// Signed-in only. The course page renders its lesson list from this:
+// { checklist: { guides, quizzes, reps }, stats, detailed: { quizAttempts }, ...flat legacy fields }
+// Every published item is listed, with completed/completedAt (and bestScore, attempts) merged in.
 GET /api/progress/:courseSlug
 ```
 

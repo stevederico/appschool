@@ -34,6 +34,14 @@ function toChecklistEntries(raw: unknown): NonNullable<Checklist['guides']> {
   return out;
 }
 
+/** True when a progress payload carries the lesson checklist the page renders from. */
+function hasChecklist(raw: unknown): raw is CourseProgress {
+  if (typeof raw !== 'object' || raw === null || !('checklist' in raw)) return false;
+  const { checklist } = raw;
+  if (typeof checklist !== 'object' || checklist === null) return false;
+  return 'guides' in checklist && Array.isArray(checklist.guides);
+}
+
 export default function CourseDetailView() {
   const { slug } = useParams();
   const requireAuth = useAuthGate();
@@ -58,11 +66,15 @@ export default function CourseDetailView() {
       const courseData = await courseRes.json();
       setCourse(courseData);
 
-      if (progressRes.ok) {
-        const progressData = await progressRes.json();
+      const progressData: unknown = progressRes.ok
+        ? await progressRes.json().catch(() => null)
+        : null;
+
+      if (hasChecklist(progressData)) {
         setProgress(progressData);
       } else {
-        // Fetch guides and reps directly when progress is not available
+        // Logged out, or a progress payload without a checklist: list the
+        // lessons from the public endpoints so the course can still be opened.
         const [guidesRes, repsRes] = await Promise.all([
           fetch(`${getBackendURL()}/courses/${slug}/guides`),
           fetch(`${getBackendURL()}/courses/${slug}/reps`)

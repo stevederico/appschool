@@ -52,6 +52,8 @@ interface SlideViewProps {
   setSkipCode: Dispatch<SetStateAction<boolean>>;
   onExit: () => void;
   onTakeQuiz: () => void;
+  /** False when the guide has no quiz: the last slide then offers "Finish". */
+  hasQuiz?: boolean;
   guideTitle?: string;
   bookmarkedSections?: Set<string>;
   onToggleBookmark?: ((sectionTitle: string, sectionContent: string) => void) | null;
@@ -75,6 +77,7 @@ export default function SlideView({
   setSkipCode,
   onExit,
   onTakeQuiz,
+  hasQuiz = true,
   bookmarkedSections = new Set(),
   onToggleBookmark = null
 }: SlideViewProps) {
@@ -458,7 +461,7 @@ export default function SlideView({
             onClick={onTakeQuiz}
             className="px-6 py-3 bg-app text-white rounded-lg cursor-pointer hover:opacity-90 transition-all flex items-center gap-2"
           >
-            Take Quiz
+            {hasQuiz ? 'Take Quiz' : 'Finish'}
             <ArrowRight size={20}/>
           </button>
         ) : (

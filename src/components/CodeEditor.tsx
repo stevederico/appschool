@@ -1,5 +1,8 @@
 import Editor from '@monaco-editor/react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+
+/** Whether the bundled Monaco chunk has loaded. */
+type MonacoStatus = 'loading' | 'ready' | 'failed';
 
 /** Props for {@link CodeEditor}. */
 interface CodeEditorProps {
@@ -26,6 +29,27 @@ export default function CodeEditor({
   theme = 'vs-dark'
 }: CodeEditorProps) {
   const [isLoading, setIsLoading] = useState(true);
+  const [monaco, setMonaco] = useState<MonacoStatus>('loading');
+
+  // Load the bundled Monaco before mounting <Editor>, so the loader never
+  // reaches for its CDN default. If the chunk cannot be fetched, a plain
+  // editor is shown instead of crashing the page.
+  useEffect(() => {
+    let active = true;
+    const load = async () => {
+      try {
+        await import('./monacoSetup');
+        if (active) setMonaco('ready');
+      } catch (err) {
+        console.error('Code editor failed to load:', err);
+        if (active) setMonaco('failed');
+      }
+    };
+    load();
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const handleEditorMount = () => {
     setIsLoading(false);
@@ -37,14 +61,30 @@ export default function CodeEditor({
     }
   };
 
+  if (monaco === 'failed') {
+    return (
+      <div className="rounded-lg overflow-hidden border border-accent">
+        <textarea
+          value={value}
+          onChange={(e) => handleChange(e.target.value)}
+          readOnly={readOnly}
+          spellCheck={false}
+          aria-label="Code editor"
+          style={{ height }}
+          className="block w-full resize-none bg-accent p-4 font-mono text-sm outline-none"
+        />
+      </div>
+    );
+  }
+
   return (
-    <div className="relative rounded-lg overflow-hidden border border-accent">
+    <div className="relative rounded-lg overflow-hidden border border-accent" style={{ minHeight: height }}>
       {isLoading && (
         <div className="absolute inset-0 flex items-center justify-center bg-accent z-10">
           <div className="animate-pulse text-muted-foreground">Loading editor...</div>
         </div>
       )}
-      <Editor
+      {monaco === 'ready' && <Editor
         height={height}
         language={language}
         value={value}
@@ -66,7 +106,7 @@ export default function CodeEditor({
           formatOnType: true,
           bracketPairColorization: { enabled: true }
         }}
-      />
+      />}
     </div>
   );
 }
