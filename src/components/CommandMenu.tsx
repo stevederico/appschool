@@ -10,9 +10,9 @@ import {
   CommandGroup,
   CommandItem,
   CommandShortcut,
-} from '@stevederico/skateboard-ui/shadcn/ui/command';
-import { BookOpen, Bookmark, ChartNoAxesColumnIncreasing } from 'lucide-react';
-import type { LucideIcon } from 'lucide-react';
+} from '@stevederico/skateboard-ui/ui/command';
+import { BookOpen, Bookmark, ChartNoAxesColumnIncreasing } from '@stevederico/skateboard-ui/icons';
+import type { LucideIcon } from '@stevederico/skateboard-ui/icons';
 
 /** Icons for the `icon` strings in constants.json's pages array. */
 // yagni: only the icons this app's constants.json uses -- add an entry when a page is added.

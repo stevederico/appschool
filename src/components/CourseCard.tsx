@@ -1,6 +1,6 @@
-import { useNavigate } from 'react-router';
+import { useNavigate } from '@stevederico/skateboard-ui/router';
 import type { MouseEvent } from 'react';
-import { BookOpen, Check, Clock, Code, HelpCircle } from 'lucide-react';
+import { BookOpen, Check, Clock, Code, HelpCircle } from '@stevederico/skateboard-ui/icons';
 
 /** A course summary as returned by GET /courses. */
 export interface Course {

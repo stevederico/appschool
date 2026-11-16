@@ -1,6 +1,6 @@
 import { useEffect, useRef, useCallback, useState } from 'react';
 import type { Dispatch, SetStateAction } from 'react';
-import { AlertCircle, ArrowLeft, ArrowRight, Loader, Pause, Play, Settings, Volume2, X } from 'lucide-react';
+import { AlertCircle, ArrowLeft, ArrowRight, Loader, Pause, Play, Settings, Volume2, X } from '@stevederico/skateboard-ui/icons';
 import MarkdownRenderer from './MarkdownRenderer';
 import BookmarkButton from './BookmarkButton';
 import { BrowserTTS, XaiTTS, stripMarkdown, XAI_VOICES } from '../services/tts';

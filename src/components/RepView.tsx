@@ -1,7 +1,7 @@
 import Header from '@stevederico/skateboard-ui/Header';
-import { AlertCircle, Check, CheckCircle, ChevronDown, ChevronRight, Clock, Eye, EyeOff, History, Pause, Play, RotateCcw, Trophy, X, XCircle } from 'lucide-react';
+import { AlertCircle, Check, CheckCircle, ChevronDown, ChevronRight, Clock, Eye, EyeOff, History, Pause, Play, RotateCcw, Trophy, X, XCircle } from '@stevederico/skateboard-ui/icons';
 import { useState, useEffect, useRef } from 'react';
-import { useParams, useNavigate } from 'react-router';
+import { useParams, useNavigate } from '@stevederico/skateboard-ui/router';
 import { getBackendURL, getCSRFToken } from '@stevederico/skateboard-ui/Utilities';
 import CodeEditor from './CodeEditor';
 

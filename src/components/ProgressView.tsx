@@ -1,8 +1,8 @@
 import Header from '@stevederico/skateboard-ui/Header';
-import { Activity, BookOpen, Calendar, CheckCircle, Circle, Code, HelpCircle, Layers } from 'lucide-react';
-import type { LucideIcon } from 'lucide-react';
+import { Activity, BookOpen, Calendar, CheckCircle, Circle, Code, HelpCircle, Layers } from '@stevederico/skateboard-ui/icons';
+import type { LucideIcon } from '@stevederico/skateboard-ui/icons';
 import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router';
+import { useNavigate } from '@stevederico/skateboard-ui/router';
 import { getBackendURL } from '@stevederico/skateboard-ui/Utilities';
 
 /** A completed activity (guide/quiz/rep) in the progress timeline. */

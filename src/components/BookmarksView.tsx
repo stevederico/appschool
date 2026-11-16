@@ -1,8 +1,8 @@
 import Header from '@stevederico/skateboard-ui/Header';
-import { BookOpen, Bookmark, ChevronDown, ChevronRight, FileText, Loader, X } from 'lucide-react';
+import { BookOpen, Bookmark, ChevronDown, ChevronRight, FileText, Loader, X } from '@stevederico/skateboard-ui/icons';
 import { useState, useEffect } from 'react';
 import type { MouseEvent } from 'react';
-import { useNavigate } from 'react-router';
+import { useNavigate } from '@stevederico/skateboard-ui/router';
 import { getBackendURL, getCSRFToken } from '@stevederico/skateboard-ui/Utilities';
 
 /** A saved bookmark for a guide section, as returned by GET /bookmarks. */

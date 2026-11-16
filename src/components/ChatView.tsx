@@ -1,7 +1,7 @@
 import Header from '@stevederico/skateboard-ui/Header';
 import UpgradeSheet from '@stevederico/skateboard-ui/UpgradeSheet';
 import type { UpgradeSheetHandle } from '@stevederico/skateboard-ui/UpgradeSheet';
-import { ArrowUp } from 'lucide-react';
+import { ArrowUp } from '@stevederico/skateboard-ui/icons';
 import { useState, useEffect, useRef } from "react";
 import { getRemainingUsage, trackUsage, showUpgradeSheet } from '@stevederico/skateboard-ui/Utilities';
 import { getState } from '@stevederico/skateboard-ui/Context';

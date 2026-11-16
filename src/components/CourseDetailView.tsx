@@ -1,6 +1,6 @@
-import { BookOpen, Check, Clock, Code, HelpCircle } from 'lucide-react';
+import { BookOpen, Check, Clock, Code, HelpCircle } from '@stevederico/skateboard-ui/icons';
 import { useState, useEffect } from 'react';
-import { useParams } from 'react-router';
+import { useParams } from '@stevederico/skateboard-ui/router';
 import { getBackendURL, getCSRFToken } from '@stevederico/skateboard-ui/Utilities';
 import { useAuthGate } from '@stevederico/skateboard-ui/useAuthGate';
 import ProgressChecklist from './ProgressChecklist';

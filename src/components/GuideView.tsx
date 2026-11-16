@@ -1,6 +1,6 @@
-import { Check, CheckCircle, Clock, HelpCircle, Play } from 'lucide-react';
+import { Check, CheckCircle, Clock, HelpCircle, Play } from '@stevederico/skateboard-ui/icons';
 import { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router';
+import { useParams, useNavigate } from '@stevederico/skateboard-ui/router';
 import { getBackendURL, getCSRFToken } from '@stevederico/skateboard-ui/Utilities';
 import MarkdownRenderer from './MarkdownRenderer';
 import SlideView from './SlideView';

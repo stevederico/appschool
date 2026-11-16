@@ -1,7 +1,7 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router';
-import { BookOpen, Check, CheckCircle, ChevronDown, ChevronUp, Circle, Code, HelpCircle, XCircle, Zap } from 'lucide-react';
-import type { LucideIcon } from 'lucide-react';
+import { useNavigate } from '@stevederico/skateboard-ui/router';
+import { BookOpen, Check, CheckCircle, ChevronDown, ChevronUp, Circle, Code, HelpCircle, XCircle, Zap } from '@stevederico/skateboard-ui/icons';
+import type { LucideIcon } from '@stevederico/skateboard-ui/icons';
 
 const WORDS_PER_MINUTE = 150;
 

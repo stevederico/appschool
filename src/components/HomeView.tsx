@@ -1,7 +1,7 @@
 import Header from '@stevederico/skateboard-ui/Header';
 import UpgradeSheet from '@stevederico/skateboard-ui/UpgradeSheet';
 import type { UpgradeSheetHandle } from '@stevederico/skateboard-ui/UpgradeSheet';
-import { Check, Trash2 } from 'lucide-react';
+import { Check, Trash2 } from '@stevederico/skateboard-ui/icons';
 import { useEffect, useState, useRef } from "react";
 import type { DragEvent, KeyboardEvent } from "react";
 import { getRemainingUsage, trackUsage, showUpgradeSheet } from '@stevederico/skateboard-ui/Utilities';

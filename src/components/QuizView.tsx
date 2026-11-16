@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
-import { useParams, useNavigate } from 'react-router';
+import { useParams, useNavigate } from '@stevederico/skateboard-ui/router';
 import { getBackendURL, getCSRFToken } from '@stevederico/skateboard-ui/Utilities';
-import { CheckCircle, XCircle } from 'lucide-react';
+import { CheckCircle, XCircle } from '@stevederico/skateboard-ui/icons';
 
 /** An answer option: either a plain string or an object with id/text. */
 type QuizOption = string | { id?: string; text?: string };
